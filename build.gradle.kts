@@ -34,7 +34,7 @@ dependencies {
     implementation("io.micrometer:micrometer-registry-prometheus")
 
     // Structured JSON logging (activated only by the `json`/prod logback profile).
-    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
+    implementation("net.logstash.logback:logstash-logback-encoder:9.0")
 
     // Lightweight tracing bridge + OTLP exporter. Wired via config but disabled by
     // default (sampling probability 0.0) so NO collector is needed to run or build.
