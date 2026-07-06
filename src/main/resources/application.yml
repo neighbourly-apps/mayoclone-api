@@ -2,28 +2,47 @@ server:
   port: 8080
 
 spring:
+  application:
+    name: mayoclone-api
+  # Postgres is the primary datasource. All connection values are env-driven with
+  # safe local defaults; NO secrets live in this file. Prod MUST override these.
   datasource:
-    url: jdbc:h2:mem:mayoclone;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    url: ${MAYOCLONE_DB_URL:jdbc:postgresql://localhost:5432/mayoclone}
+    username: ${MAYOCLONE_DB_USER:mayoclone}
+    password: ${MAYOCLONE_DB_PASSWORD:mayoclone}
+    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
-      ddl-auto: update
+      # Flyway OWNS the schema. Hibernate only validates that the mapped
+      # entities line up with the migrated tables/columns.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         format_sql: false
-  h2:
-    console:
-      enabled: true
-      path: /h2
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  tracing:
+    # Lightweight OTel tracing is wired but DISABLED by default (0.0 sampling) so
+    # NO collector is needed to run or build. Set MAYOCLONE_TRACING_SAMPLING>0 and
+    # point management.otlp.tracing.endpoint at a collector to enable.
+    sampling:
+      probability: ${MAYOCLONE_TRACING_SAMPLING:0.0}
+  otlp:
+    tracing:
+      endpoint: ${MAYOCLONE_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
 
 # mayoclone application settings
 mayoclone:
@@ -31,20 +50,38 @@ mayoclone:
     # when false, PollScheduler early-returns and does not touch any mailbox
     enabled: false
     interval-ms: 60000
+  jwt:
+    # DEV DEFAULT ONLY — prod MUST set MAYOCLONE_JWT_SECRET to a strong 32+ byte secret.
+    secret: ${MAYOCLONE_JWT_SECRET:dev-insecure-jwt-secret-change-me-please-0123456789abcdef}
+    issuer: ${MAYOCLONE_JWT_ISSUER:mayoclone}
+    access-ttl-seconds: ${MAYOCLONE_JWT_ACCESS_TTL:900}        # 15 minutes
+    refresh-ttl-seconds: ${MAYOCLONE_JWT_REFRESH_TTL:604800}   # 7 days
+  enc:
+    # base64-encoded 32 bytes (AES-256). Empty => documented dev default in the converter.
+    # Prod MUST set MAYOCLONE_ENC_KEY. NEVER commit a real key.
+    key: ${MAYOCLONE_ENC_KEY:}
+  cors:
+    # comma-separated allowlist of browser origins that may call the API with credentials.
+    origins: ${MAYOCLONE_CORS_ORIGINS:http://localhost:5173}
+  cookie:
+    # refresh/csrf cookies are Secure only over HTTPS. Local dev is http, so default false.
+    # Prod MUST set MAYOCLONE_COOKIE_SECURE=true.
+    secure: ${MAYOCLONE_COOKIE_SECURE:false}
+  frontend:
+    # SPA base URL used for the Gmail OAuth success redirect.
+    base-url: ${MAYOCLONE_FRONTEND_BASE_URL:http://localhost:5173}
+  inbound:
+    # Domain used to mint per-vendor FORWARDING addresses (<token>@<domain>).
+    domain: ${MAYOCLONE_INBOUND_DOMAIN:inbound.mayoclone.local}
+    # HMAC secret the inbound-email provider signs webhooks with.
+    # DEV DEFAULT ONLY — prod MUST set MAYOCLONE_INBOUND_SIGNING_SECRET.
+    signing-secret: ${MAYOCLONE_INBOUND_SIGNING_SECRET:dev-inbound-signing-secret-change-me}
 
----
-# Postgres profile: activate with SPRING_PROFILES_ACTIVE=postgres
-# All connection values are env-driven so no secrets live in this file.
-spring:
-  config:
-    activate:
-      on-profile: postgres
-  datasource:
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5432/mayoclone}
-    driver-class-name: org.postgresql.Driver
-    username: ${POSTGRES_USER:mayoclone}
-    password: ${POSTGRES_PASSWORD:mayoclone}
-  jpa:
-    hibernate:
-      ddl-auto: update
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
+# Google OAuth (Gmail readonly ingestion). ABSENT by default → the Gmail feature
+# is disabled gracefully (endpoints return 503); the app still starts. Set all
+# three in prod to enable.
+google:
+  oauth:
+    client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI:}

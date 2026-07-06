@@ -4,6 +4,8 @@ import com.mayoclone.domain.Aggregator;
 import com.mayoclone.dto.AggregatorDto;
 import com.mayoclone.dto.CreateAggregatorRequest;
 import com.mayoclone.repository.AggregatorRepository;
+import com.mayoclone.security.AccountPrincipal;
+import com.mayoclone.security.CurrentAccountService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -20,9 +22,14 @@ import static org.springframework.http.HttpStatus.NOT_FOUND;
 public class AggregatorService {
 
     private final AggregatorRepository repo;
+    private final AuditService auditService;
+    private final CurrentAccountService currentAccount;
 
-    public AggregatorService(AggregatorRepository repo) {
+    public AggregatorService(AggregatorRepository repo, AuditService auditService,
+                             CurrentAccountService currentAccount) {
         this.repo = repo;
+        this.auditService = auditService;
+        this.currentAccount = currentAccount;
     }
 
     public List<AggregatorDto> list() {
@@ -37,7 +44,9 @@ public class AggregatorService {
         a.setCode(req.code());
         a.setCreatedAt(Instant.now());
         apply(a, req);
-        return AggregatorDto.from(repo.save(a));
+        Aggregator saved = repo.save(a);
+        audit("aggregator.create", saved);
+        return AggregatorDto.from(saved);
     }
 
     public AggregatorDto update(Long id, CreateAggregatorRequest req) {
@@ -48,7 +57,9 @@ public class AggregatorService {
         }
         a.setCode(req.code());
         apply(a, req);
-        return AggregatorDto.from(repo.save(a));
+        Aggregator saved = repo.save(a);
+        audit("aggregator.update", saved);
+        return AggregatorDto.from(saved);
     }
 
     public void delete(Long id) {
@@ -56,6 +67,32 @@ public class AggregatorService {
             throw new ResponseStatusException(NOT_FOUND, "Aggregator " + id + " not found");
         }
         repo.deleteById(id);
+        auditService.record(actorAccountId(), actorEmail(), "aggregator.delete", "aggregator",
+                String.valueOf(id));
+    }
+
+    private void audit(String action, Aggregator a) {
+        auditService.record(actorAccountId(), actorEmail(), action, "aggregator",
+                String.valueOf(a.getId()),
+                java.util.Map.of("code", a.getCode() == null ? "" : a.getCode()));
+    }
+
+    private Long actorAccountId() {
+        AccountPrincipal p = safePrincipal();
+        return p == null ? null : p.id();
+    }
+
+    private String actorEmail() {
+        AccountPrincipal p = safePrincipal();
+        return p == null ? null : p.email();
+    }
+
+    private AccountPrincipal safePrincipal() {
+        try {
+            return currentAccount.require();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

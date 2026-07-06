@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mayoclone-api-config
+  namespace: mayoclone
+  labels:
+    app.kubernetes.io/name: mayoclone-api
+    app.kubernetes.io/part-of: mayoclone
+# Non-secret configuration only. Secrets live in the Secret (see
+# secret.example.yaml). Adjust the placeholder hosts/URLs for your environment.
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  # Comma-separated allowed browser origins (the public web host).
+  MAYOCLONE_CORS_ORIGINS: "https://app.mayoclone.example.com"
+  MAYOCLONE_FRONTEND_BASE_URL: "https://app.mayoclone.example.com"
+  MAYOCLONE_COOKIE_SECURE: "true"
+  # Inbound mail webhook domain (the signing secret is a Secret, not here).
+  MAYOCLONE_INBOUND_DOMAIN: "inbound.mayoclone.example.com"
+  # Google OAuth redirect target (client id/secret are Secrets).
+  GOOGLE_OAUTH_REDIRECT_URI: "https://app.mayoclone.example.com/api/auth/google/callback"
+  # Tracing: disabled by default; set sampling > 0 and point at a collector.
+  MAYOCLONE_TRACING_SAMPLING: "0.0"
+  MAYOCLONE_OTLP_ENDPOINT: "http://otel-collector.observability:4318/v1/traces"

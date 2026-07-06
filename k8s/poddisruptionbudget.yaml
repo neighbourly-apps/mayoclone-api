@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mayoclone-api
+  namespace: mayoclone
+  labels:
+    app.kubernetes.io/name: mayoclone-api
+    app.kubernetes.io/part-of: mayoclone
+spec:
+  # Keep at least one pod serving during voluntary disruptions (node drains,
+  # rollouts). With replicas=2 this allows exactly one to be evicted at a time.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mayoclone-api

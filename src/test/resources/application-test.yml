@@ -1,0 +1,40 @@
+# Test profile: runs anywhere WITHOUT Docker/Postgres.
+# H2 in PostgreSQL-compatibility mode, Flyway disabled, Hibernate generates the
+# schema from the entities (create-drop). Pure unit tests don't touch this at all.
+spring:
+  datasource:
+    url: jdbc:h2:mem:mayoclone_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    database-platform: org.hibernate.dialect.H2Dialect
+    properties:
+      hibernate:
+        format_sql: false
+  flyway:
+    enabled: false
+
+mayoclone:
+  poll:
+    enabled: false
+  jwt:
+    secret: test-only-jwt-secret-value-that-is-long-enough-0123456789
+    issuer: mayoclone-test
+    access-ttl-seconds: 900
+    refresh-ttl-seconds: 604800
+  enc:
+    # deterministic 32-byte base64 key for tests
+    key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  cors:
+    origins: http://localhost:5173
+  cookie:
+    secure: false
+  inbound:
+    # Deterministic inbound-webhook HMAC secret + domain for tests. The webhook
+    # tests sign with the InboundSignatureVerifier bean, so no test needs to know
+    # this value — it just must be present and stable.
+    domain: inbound.mayoclone.test
+    signing-secret: test-inbound-signing-secret-0123456789

@@ -2,19 +2,45 @@ name: backend
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# Cancel an in-flight run on the same ref when a newer commit arrives.
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: Gradle build + test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
           java-version: '21'
+          distribution: 'temurin'
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-      - name: Build
+        with:
+          gradle-version: wrapper
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Build (compile + test + bootJar)
         run: ./gradlew build --no-daemon
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-reports
+          path: build/reports/tests/**
+          retention-days: 7
+          if-no-files-found: ignore

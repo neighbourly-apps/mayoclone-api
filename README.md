@@ -67,26 +67,30 @@ Sender domains are **best-effort defaults** and are fully editable via
 ## Requirements
 
 - Java 21
-- No external infrastructure — runs on in-memory H2 out of the box.
+- **PostgreSQL** — the primary datasource. Flyway owns the schema; Hibernate runs
+  `ddl-auto=validate`.
 
 ## Run
 
+The datasource is env-driven with safe local defaults
+(`jdbc:postgresql://localhost:5432/mayoclone`, user/password `mayoclone`), so a
+local Postgres with those defaults needs no extra config:
+
 ```bash
 ./gradlew bootRun
 ```
 
-The API comes up on `http://localhost:8080`. The H2 console is at
-`http://localhost:8080/h2` (JDBC URL `jdbc:h2:mem:mayoclone`, user `sa`, no
-password).
-
-### Postgres profile (optional)
+The API comes up on `http://localhost:8080`. Override the connection (and any
+other setting) via env vars — see [`.env.example`](.env.example):
 
 ```bash
-SPRING_PROFILES_ACTIVE=postgres \
-POSTGRES_URL=jdbc:postgresql://localhost:5432/mayoclone \
-POSTGRES_USER=mayoclone POSTGRES_PASSWORD=secret \
+MAYOCLONE_DB_URL=jdbc:postgresql://localhost:5432/mayoclone \
+MAYOCLONE_DB_USER=mayoclone MAYOCLONE_DB_PASSWORD=secret \
 ./gradlew bootRun
 ```
+
+Local dev boots with **insecure dev-default** JWT/encryption/inbound secrets
+(logged as warnings). Prod MUST override them — see the Production section.
 
 ## Signup → scrape flow
 
@@ -163,11 +167,43 @@ carries an explicit total (`order.amount`), that value is used as the subtotal;
 otherwise the sum of the line items is used. `taxAmount` = 5% of subtotal,
 `total` = subtotal + taxAmount.
 
-## Security note
+## Production
 
-This is a slice: IMAP passwords are stored **in plaintext** in the DB (never
-returned in any DTO), and the API has **no authentication** (CORS is open to
-`http://localhost:5173`).
+MayoClone runs as a hardened, multi-tenant service. Before any real deployment,
+read:
 
-**Security TODO:** encrypt credentials at rest (or use app-specific IMAP
-passwords / OAuth), and put the API behind auth before any real deployment.
+- **[SECURITY.md](SECURITY.md)** — security policy, auth/authz/tenancy model,
+  secret handling + rotation, the three ingestion trust models, rate limits,
+  headers, audit immutability, and a STRIDE threat model.
+- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — components, data flow,
+  entities, the `MailSource` abstraction.
+- **[docs/INGESTION.md](docs/INGESTION.md)** — step-by-step setup for the
+  forwarding webhook, Gmail OAuth (incl. the CASA caveat), and IMAP paths.
+- **[docs/RUNBOOK.md](docs/RUNBOOK.md)** — deploy, required env/secrets, secret
+  generation + rotation, Flyway behavior, backups, incidents, health/metrics.
+- **[.env.example](.env.example)** — every env var with safe placeholders.
+
+### Security model at a glance
+
+- **Auth**: email + password (Argon2id) → **JWT access** (HS256, 15 min) +
+  **opaque rotating refresh** (7 day, SHA-256-hashed, reuse ⇒ family revocation)
+  in an httpOnly Secure SameSite=Lax cookie scoped `/api/auth`; **double-submit
+  CSRF** on refresh/logout.
+- **Tenancy**: all data scoped by `accountId` from the JWT (never client-supplied);
+  cross-tenant access → **404**. Roles OWNER/ADMIN; aggregator writes = ADMIN.
+- **Secrets at rest**: IMAP passwords + Gmail OAuth refresh tokens **AES-256-GCM
+  encrypted** (`MAYOCLONE_ENC_KEY`); never returned in any DTO.
+- **Hardening**: Bucket4j rate limits (10/min login, 300/min global → 429),
+  HSTS/nosniff/DENY/CSP headers, CORS allowlist with credentials, and an
+  **immutable audit log** (DB trigger blocks UPDATE/DELETE).
+- **Ingestion**: forwarding webhook (HMAC-signed, no creds stored) is the primary
+  path; Gmail OAuth and IMAP app-password are alternatives. Unroutable/unparseable
+  mail dead-letters to a tenant-scoped review queue.
+
+### Observability
+
+- Micrometer → Prometheus at `/actuator/prometheus`
+  (`mayoclone.orders.ingested`, `.ingest.failures`, `.webhook.inbound`,
+  `.auth.login`, `.sync.duration`).
+- JSON logs on the `prod`/`json` profile with `X-Request-Id` correlation.
+- OTLP tracing wired (sampling `0.0` by default).

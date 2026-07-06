@@ -1,15 +1,21 @@
 package com.mayoclone.web;
 
+import com.mayoclone.domain.Account;
+import com.mayoclone.repository.AccountRepository;
+import com.mayoclone.service.AccountSeeder;
 import com.mayoclone.service.ImapIngestionService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
 
 /**
  * Feeds a handful of realistic sample IRCTC e-catering emails through the real
@@ -36,19 +42,31 @@ public class DemoController {
     private static final DateTimeFormatter ISO = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final ImapIngestionService ingestionService;
+    private final AccountRepository accountRepo;
     private final AtomicInteger counter = new AtomicInteger(0);
 
-    public DemoController(ImapIngestionService ingestionService) {
+    public DemoController(ImapIngestionService ingestionService, AccountRepository accountRepo) {
         this.ingestionService = ingestionService;
+        this.accountRepo = accountRepo;
     }
 
+    /**
+     * Public demo: ingests sample emails through the real pipeline and attributes
+     * the resulting orders to the seeded demo tenant ({@link AccountSeeder#DEMO_EMAIL}).
+     * Log in as that account (demo@mayoclone.local / demo-password-1) to see them
+     * via the tenant-scoped order endpoints.
+     */
     @PostMapping("/ingest")
     public Map<String, Integer> ingest() {
+        Account demo = accountRepo.findByEmailIgnoreCase(AccountSeeder.DEMO_EMAIL)
+                .orElseThrow(() -> new ResponseStatusException(SERVICE_UNAVAILABLE, "Demo account not seeded"));
         int n = counter.incrementAndGet();
         int newOrders = 0;
         for (Sample s : samples(n)) {
-            // Demo orders have no owning vendor (vendorId = null).
-            newOrders += ingestionService.ingestRaw(s.from, s.subject, s.body, s.messageId, null).newOrders();
+            // Demo orders belong to the demo tenant and have no owning vendor.
+            newOrders += ingestionService
+                    .ingestRaw(s.from, s.subject, s.body, s.messageId, demo.getId(), null)
+                    .newOrders();
         }
         return Map.of("newOrders", newOrders);
     }

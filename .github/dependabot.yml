@@ -1,0 +1,50 @@
+# Weekly dependency PRs. Minor + patch grouped per ecosystem to avoid PR
+# storms; majors stay individual for careful review.
+version: 2
+updates:
+  # ─── GitHub Actions workflows ─────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      gh-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # ─── Backend (Gradle, repo root) ──────────────────────────────────────────
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      spring-boot:
+        patterns:
+          - "org.springframework.boot:*"
+          - "org.springframework.cloud:*"
+          - "org.springframework.security:*"
+        update-types: [minor, patch]
+      observability:
+        patterns:
+          - "io.micrometer:*"
+          - "io.opentelemetry:*"
+          - "net.logstash.logback:*"
+        update-types: [minor, patch]
+      other-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # ─── Container base image (Dockerfile) ────────────────────────────────────
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      docker:
+        patterns: ["*"]

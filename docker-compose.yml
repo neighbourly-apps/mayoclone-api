@@ -1,0 +1,94 @@
+# MayoClone local stack — postgres + api + web behind one compose file.
+#
+# TOPOLOGY
+#   postgres (5432, internal) ──► api (8080) ──► web/nginx (8080 → host 5173)
+#   The web container reverse-proxies /api/ to the `api` service (same-origin),
+#   so the browser only ever talks to http://localhost:5173.
+#
+# SIBLING CHECKOUT ASSUMPTION
+#   This file lives in mayoclone-api/. It builds the web image from a sibling
+#   checkout at ../mayoclone-web. Clone both repos next to each other:
+#     parent/
+#       ├── mayoclone-api/   (this repo — run `docker compose up` here)
+#       └── mayoclone-web/
+#
+# SECRETS
+#   The values below are DEV-ONLY defaults, inlined with comments so the stack
+#   runs with zero setup. NEVER use these in a real environment — override via a
+#   real secret store / .env in prod. (The docs agent owns .env.example.)
+#
+# USAGE
+#   docker compose up --build          # start everything
+#   docker compose down -v             # stop and wipe the db volume
+
+name: mayoclone
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mayoclone
+      POSTGRES_USER: mayoclone
+      POSTGRES_PASSWORD: mayoclone      # DEV ONLY
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mayoclone -d mayoclone"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy      # wait until the db accepts connections
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MAYOCLONE_DB_URL: jdbc:postgresql://postgres:5432/mayoclone
+      MAYOCLONE_DB_USER: mayoclone
+      MAYOCLONE_DB_PASSWORD: mayoclone   # DEV ONLY — matches postgres above
+      # DEV-ONLY placeholder secrets (32+ bytes). Regenerate for any real deploy.
+      MAYOCLONE_JWT_SECRET: dev-jwt-secret-change-me-0123456789abcdef
+      MAYOCLONE_ENC_KEY: dev-enc-key-change-me-0123456789abcdef01
+      # CORS / cookies: web is same-origin via the nginx /api proxy, so the
+      # browser origin is the web container's host:port.
+      MAYOCLONE_CORS_ORIGINS: http://localhost:5173
+      MAYOCLONE_COOKIE_SECURE: "false"   # DEV: plain http; set true behind TLS
+      MAYOCLONE_FRONTEND_BASE_URL: http://localhost:5173
+      # Inbound mail webhook (dev placeholders).
+      MAYOCLONE_INBOUND_DOMAIN: inbound.localhost
+      MAYOCLONE_INBOUND_SIGNING_SECRET: dev-inbound-signing-secret-change-me
+      # Google OAuth (leave blank to disable the flow locally).
+      GOOGLE_OAUTH_CLIENT_ID: ""
+      GOOGLE_OAUTH_CLIENT_SECRET: ""
+      GOOGLE_OAUTH_REDIRECT_URI: http://localhost:5173/api/auth/google/callback
+      # Tracing disabled by default (no collector needed).
+      MAYOCLONE_TRACING_SAMPLING: "0.0"
+    ports:
+      - "8080:8080"                      # expose api directly for debugging
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../mayoclone-web         # SIBLING checkout — see header note
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy      # proxy target must be up first
+    ports:
+      - "5173:8080"                      # host 5173 → nginx :8080 in-container
+    restart: unless-stopped
+
+volumes:
+  pgdata:

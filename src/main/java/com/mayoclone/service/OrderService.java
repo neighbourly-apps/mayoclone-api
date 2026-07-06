@@ -10,6 +10,7 @@ import com.mayoclone.dto.OrderStatsDto;
 import com.mayoclone.repository.AggregatorRepository;
 import com.mayoclone.repository.IrctcOrderRepository;
 import com.mayoclone.repository.VendorRepository;
+import com.mayoclone.security.CurrentAccountService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -30,21 +31,26 @@ public class OrderService {
     private final IrctcOrderRepository orderRepo;
     private final AggregatorRepository aggregatorRepo;
     private final VendorRepository vendorRepo;
+    private final CurrentAccountService currentAccount;
 
     public OrderService(IrctcOrderRepository orderRepo,
                         AggregatorRepository aggregatorRepo,
-                        VendorRepository vendorRepo) {
+                        VendorRepository vendorRepo,
+                        CurrentAccountService currentAccount) {
         this.orderRepo = orderRepo;
         this.aggregatorRepo = aggregatorRepo;
         this.vendorRepo = vendorRepo;
+        this.currentAccount = currentAccount;
     }
 
     /**
-     * Orders newest first (placedAt desc), with all filters optional and
-     * combinable. Filtering is done in-memory over the ordered result set.
+     * Orders newest first (placedAt desc), scoped to the caller's tenant. All
+     * filters optional and combinable; filtering is done in-memory over the
+     * account-scoped, ordered result set.
      */
     public List<OrderDto> list(String aggregatorCode, String station, LocalDate date, String trainNumber) {
-        return orderRepo.findAllByOrderByPlacedAtDesc().stream()
+        Long accountId = currentAccount.accountId();
+        return orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId).stream()
                 .filter(o -> aggregatorCode == null
                         || (o.getAggregator() != null
                         && aggregatorCode.equalsIgnoreCase(o.getAggregator().getCode())))
@@ -60,19 +66,21 @@ public class OrderService {
     }
 
     public OrderStatsDto stats() {
-        List<IrctcOrder> all = orderRepo.findAll();
+        Long accountId = currentAccount.accountId();
+        List<IrctcOrder> all = orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId);
         BigDecimal revenue = all.stream()
                 .map(o -> o.getAmount() != null ? o.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Counts come from the managed aggregator table (every aggregator, even zero).
+        // Counts come from the managed aggregator table (every aggregator, even zero),
+        // scoped to this tenant's orders.
         List<OrderStatsDto.AggregatorCount> byAggregator = aggregatorRepo.findAll().stream()
                 .map(agg -> new OrderStatsDto.AggregatorCount(
                         agg.getCode(), agg.getName(), agg.getBrandColor(),
-                        orderRepo.countByAggregator(agg)))
+                        orderRepo.countByAccountIdAndAggregator(accountId, agg)))
                 .toList();
 
-        long upcomingToday = orderRepo.countByDeliveryDate(LocalDate.now());
+        long upcomingToday = orderRepo.countByAccountIdAndDeliveryDate(accountId, LocalDate.now());
         return new OrderStatsDto(all.size(), revenue, byAggregator, upcomingToday);
     }
 
@@ -103,7 +111,7 @@ public class OrderService {
         BigDecimal total = subTotal.add(taxAmount);
 
         Vendor vendor = o.getVendorId() == null ? null
-                : vendorRepo.findById(o.getVendorId()).orElse(null);
+                : vendorRepo.findByIdAndAccountId(o.getVendorId(), o.getAccountId()).orElse(null);
         InvoiceDto.Vendor vendorView = vendor == null ? null : new InvoiceDto.Vendor(
                 vendor.getRestaurantName(), vendor.getGstin(), vendor.getAddressLine(),
                 vendor.getStationCode(), vendor.getPhone());
@@ -135,8 +143,13 @@ public class OrderService {
         return new InvoiceDto.Line(item.getName(), item.getQty(), price, lineTotal);
     }
 
+    /**
+     * Fetch an order scoped to the caller's tenant. Cross-tenant ids return 404
+     * (not 403) to avoid leaking the existence of another tenant's orders.
+     */
     private IrctcOrder find(Long id) {
-        return orderRepo.findById(id)
+        Long accountId = currentAccount.accountId();
+        return orderRepo.findByIdAndAccountId(id, accountId)
                 .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Order " + id + " not found"));
     }
 }

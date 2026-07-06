@@ -1,0 +1,26 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mayoclone-api
+  namespace: mayoclone
+  labels:
+    app.kubernetes.io/name: mayoclone-api
+    app.kubernetes.io/part-of: mayoclone
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mayoclone-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+  behavior:
+    scaleDown:
+      # Cool down before scaling in to avoid thrashing.
+      stabilizationWindowSeconds: 300

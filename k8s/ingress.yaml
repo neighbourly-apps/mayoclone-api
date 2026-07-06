@@ -1,0 +1,44 @@
+# API ingress.
+#
+# In most deployments the web ingress ALSO fronts /api (nginx reverse-proxies
+# to the api Service for a shared origin). This manifest is for cases where the
+# API is exposed on its own host (e.g. api.mayoclone.example.com) or when you
+# prefer routing /api at the cluster edge instead of in the web pod.
+#
+# NOTE (prometheus): /actuator/prometheus is INTERNAL-ONLY. It is deliberately
+# NOT routed here — scrape it in-cluster via the Service (see the
+# prometheus.io/* pod annotations). Do not add a public path for it.
+#
+# HUMAN MUST FILL IN: the host, the TLS secret, and the ingress class.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mayoclone-api
+  namespace: mayoclone
+  labels:
+    app.kubernetes.io/name: mayoclone-api
+    app.kubernetes.io/part-of: mayoclone
+  annotations:
+    # cert-manager issuer (adjust to your setup) for automatic TLS.
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Actuator must never be reachable through this public ingress.
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location ~* /actuator/(prometheus|metrics) { deny all; return 404; }
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.mayoclone.example.com   # REPLACE with your API host
+      secretName: mayoclone-api-tls   # REPLACE / created by cert-manager
+  rules:
+    - host: api.mayoclone.example.com # REPLACE with your API host
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080

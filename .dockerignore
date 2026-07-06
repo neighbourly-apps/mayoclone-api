@@ -1,0 +1,35 @@
+# Build output & caches — never send to the build context.
+build/
+*/build/
+.gradle/
+.kotlin/
+
+# VCS & IDE
+.git/
+.gitignore
+.github/
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Infra artifacts (not needed to build the jar)
+k8s/
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Docs & misc
+*.md
+HELP.md
+
+# OS / logs / local env
+.DS_Store
+Thumbs.db
+logs/
+*.log
+.env
+.env.*
+*.pem
+*.key

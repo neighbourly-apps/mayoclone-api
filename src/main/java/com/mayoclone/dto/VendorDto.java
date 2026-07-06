@@ -4,7 +4,11 @@ import com.mayoclone.domain.Vendor;
 
 import java.time.Instant;
 
-/** Safe view of a vendor. Deliberately omits {@code imapPassword}. */
+/**
+ * Safe view of a vendor. Deliberately omits all secrets ({@code imapPassword},
+ * {@code oauthRefreshToken}). {@code ingestAddress} is surfaced so the UI can show
+ * "forward your aggregator mail here" for FORWARDING vendors.
+ */
 public record VendorDto(
         Long id,
         String restaurantName,
@@ -14,6 +18,10 @@ public record VendorDto(
         String phone,
         String gstin,
         String addressLine,
+        String sourceType,
+        String ingestAddress,
+        String oauthEmail,
+        Instant oauthConnectedAt,
         String imapHost,
         int imapPort,
         String imapUsername,
@@ -33,6 +41,10 @@ public record VendorDto(
                 v.getPhone(),
                 v.getGstin(),
                 v.getAddressLine(),
+                v.getSourceType() == null ? null : v.getSourceType().name(),
+                v.getIngestAddress(),
+                v.getOauthEmail(),
+                v.getOauthConnectedAt(),
                 v.getImapHost(),
                 v.getImapPort(),
                 v.getImapUsername(),

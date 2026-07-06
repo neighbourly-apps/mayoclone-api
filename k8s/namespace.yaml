@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mayoclone
+  labels:
+    app.kubernetes.io/part-of: mayoclone
+    # Enforce the restricted Pod Security Standard for everything in here.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

@@ -1,6 +1,7 @@
 package com.mayoclone.web;
 
 import com.mayoclone.dto.IngestResult;
+import com.mayoclone.security.CurrentAccountService;
 import com.mayoclone.service.ImapIngestionService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -11,14 +12,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class SyncController {
 
     private final ImapIngestionService ingestionService;
+    private final CurrentAccountService currentAccount;
 
-    public SyncController(ImapIngestionService ingestionService) {
+    public SyncController(ImapIngestionService ingestionService, CurrentAccountService currentAccount) {
         this.ingestionService = ingestionService;
+        this.currentAccount = currentAccount;
     }
 
-    /** Sync all active mailboxes now. */
+    /** Sync the caller tenant's active mailboxes now. */
     @PostMapping
     public IngestResult syncAll() {
-        return ingestionService.syncAllActive();
+        return ingestionService.syncAccountVendors(currentAccount.accountId());
     }
 }

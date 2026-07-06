@@ -8,6 +8,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -35,8 +36,13 @@ import java.util.List;
         name = "irctc_order",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_order_aggregator_external",
-                columnNames = {"aggregator_id", "externalOrderId"}
-        )
+                columnNames = {"aggregator_id", "external_order_id"}
+        ),
+        indexes = {
+                @Index(name = "idx_order_account_placed", columnList = "account_id, placed_at"),
+                @Index(name = "idx_order_account_station", columnList = "account_id, delivery_station_code"),
+                @Index(name = "idx_order_account_date", columnList = "account_id, delivery_date")
+        }
 )
 public class IrctcOrder {
 
@@ -48,7 +54,11 @@ public class IrctcOrder {
     @JoinColumn(name = "aggregator_id")
     private Aggregator aggregator;
 
-    /** Owning vendor; nullable — demo orders may have none. */
+    /** Owning tenant/business. Never set from a request body — derived from the caller/vendor. */
+    @Column(name = "account_id", nullable = false)
+    private Long accountId;
+
+    /** Owning vendor mailbox; nullable — demo orders have none. */
     @Column(nullable = true)
     private Long vendorId;
 
@@ -110,6 +120,14 @@ public class IrctcOrder {
 
     public void setAggregator(Aggregator aggregator) {
         this.aggregator = aggregator;
+    }
+
+    public Long getAccountId() {
+        return accountId;
+    }
+
+    public void setAccountId(Long accountId) {
+        this.accountId = accountId;
     }
 
     public Long getVendorId() {

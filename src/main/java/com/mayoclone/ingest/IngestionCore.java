@@ -1,0 +1,152 @@
+package com.mayoclone.ingest;
+
+import com.mayoclone.domain.Aggregator;
+import com.mayoclone.domain.IngestFailure;
+import com.mayoclone.domain.IngestFailureReason;
+import com.mayoclone.domain.IrctcOrder;
+import com.mayoclone.domain.MailSourceType;
+import com.mayoclone.dto.IngestResult;
+import com.mayoclone.observability.AppMetrics;
+import com.mayoclone.parser.IrctcEmailParser;
+import com.mayoclone.parser.ParsedOrder;
+import com.mayoclone.repository.IngestFailureRepository;
+import com.mayoclone.repository.IrctcOrderRepository;
+import com.mayoclone.service.AggregatorService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * The single source-agnostic pipeline: route → parse → dedup → save for one
+ * {@link RawMessage}. On a route/parse failure the message is written to the
+ * review queue ({@code ingest_failure}) instead of being dropped, and a metric is
+ * emitted. Used by IMAP, Gmail, the inbound webhook, and the demo endpoint.
+ */
+@Service
+public class IngestionCore {
+
+    private static final Logger log = LoggerFactory.getLogger(IngestionCore.class);
+    private static final int SNIPPET_MAX = 2000;
+
+    private final List<IrctcEmailParser> parsers;
+    private final IrctcOrderRepository orderRepo;
+    private final AggregatorService aggregatorService;
+    private final IngestFailureRepository failureRepo;
+    private final AppMetrics metrics;
+
+    public IngestionCore(List<IrctcEmailParser> parsers,
+                         IrctcOrderRepository orderRepo,
+                         AggregatorService aggregatorService,
+                         IngestFailureRepository failureRepo,
+                         AppMetrics metrics) {
+        this.parsers = parsers;
+        this.orderRepo = orderRepo;
+        this.aggregatorService = aggregatorService;
+        this.failureRepo = failureRepo;
+        this.metrics = metrics;
+    }
+
+    /**
+     * Process one raw message end-to-end. Returns fetched=1 always; newOrders=1 if
+     * a fresh order was stored (else 0). {@code accountId} is the owning tenant
+     * (nullable only for an unmatched inbound recipient); {@code vendorId} may be null.
+     */
+    public IngestResult process(Long accountId, Long vendorId, MailSourceType sourceType, RawMessage msg) {
+        // 1. Route the email to an aggregator by sender domain.
+        Optional<Aggregator> agg = aggregatorService.findBySender(msg.from());
+        if (agg.isEmpty()) {
+            recordFailure(accountId, vendorId, sourceType, msg, IngestFailureReason.NO_AGGREGATOR_MATCH);
+            return new IngestResult(1, 0);
+        }
+
+        // 2. Pick the first parser that supports this aggregator.
+        Optional<IrctcEmailParser> parser = parsers.stream()
+                .filter(p -> p.supports(agg.get(), msg.from(), msg.subject()))
+                .findFirst();
+        if (parser.isEmpty()) {
+            recordFailure(accountId, vendorId, sourceType, msg, IngestFailureReason.NO_PARSER);
+            return new IngestResult(1, 0);
+        }
+
+        ParsedOrder parsed;
+        try {
+            parsed = parser.get().parse(agg.get(), msg.from(), msg.subject(), msg.body(), msg.messageId());
+        } catch (RuntimeException e) {
+            log.warn("Parser {} threw for aggregator {}: {}",
+                    parser.get().getClass().getSimpleName(), agg.get().getCode(), e.getMessage());
+            recordFailure(accountId, vendorId, sourceType, msg, IngestFailureReason.PARSE_FAILED);
+            return new IngestResult(1, 0);
+        }
+
+        // Dedup 1: same source email already ingested (idempotency across re-sync/retry).
+        if (parsed.sourceMessageId() != null
+                && orderRepo.existsBySourceMessageId(parsed.sourceMessageId())) {
+            return new IngestResult(1, 0);
+        }
+        // Dedup 2: same (aggregator, externalOrderId) already stored.
+        if (orderRepo.existsByAggregatorAndExternalOrderId(agg.get(), parsed.externalOrderId())) {
+            return new IngestResult(1, 0);
+        }
+
+        orderRepo.save(toEntity(parsed, agg.get(), accountId, vendorId));
+        metrics.orderIngested(agg.get().getCode(), sourceType == null ? null : sourceType.name());
+        return new IngestResult(1, 1);
+    }
+
+    private void recordFailure(Long accountId, Long vendorId, MailSourceType sourceType,
+                               RawMessage msg, IngestFailureReason reason) {
+        log.debug("Ingest failure {} for sender '{}'", reason, msg.from());
+        IngestFailure f = new IngestFailure();
+        f.setAccountId(accountId);
+        f.setVendorId(vendorId);
+        f.setFromAddress(msg.from());
+        f.setSubject(truncate(msg.subject(), 1000));
+        f.setReason(reason);
+        f.setRawSnippet(truncate(msg.body(), SNIPPET_MAX)); // truncated; no secrets in an email body
+        f.setSourceType(sourceType);
+        f.setMessageId(truncate(msg.messageId(), 512));
+        f.setCreatedAt(Instant.now());
+        failureRepo.save(f);
+        metrics.ingestFailure(reason.name());
+    }
+
+    private IrctcOrder toEntity(ParsedOrder p, Aggregator aggregator, Long accountId, Long vendorId) {
+        IrctcOrder o = new IrctcOrder();
+        o.setAggregator(aggregator);
+        o.setAccountId(accountId);
+        o.setVendorId(vendorId);
+        o.setExternalOrderId(p.externalOrderId());
+        o.setPnr(p.pnr());
+        o.setTrainNumber(p.trainNumber());
+        o.setTrainName(p.trainName());
+        o.setCoach(p.coach());
+        o.setBerth(p.berth());
+        o.setBoardingStationCode(p.boardingStationCode());
+        o.setDeliveryStationCode(p.deliveryStationCode());
+        o.setDeliveryStationName(p.deliveryStationName());
+        o.setPassengerName(p.passengerName() != null ? p.passengerName() : "Unknown");
+        o.setPassengerPhone(p.passengerPhone());
+        o.setDeliveryDate(p.deliveryDate());
+        o.setDeliverySlot(p.deliverySlot());
+        o.setAmount(p.amount());
+        o.setCurrency(p.currency() != null ? p.currency() : "INR");
+        o.setStatus(p.status() != null ? p.status() : "CONFIRMED");
+        o.setSubject(p.subject());
+        o.setSourceMessageId(p.sourceMessageId());
+        o.setItems(p.items());
+        o.setPlacedAt(Instant.now());
+        o.setCreatedAt(Instant.now());
+        return o;
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) {
+            return null;
+        }
+        return s.length() <= max ? s : s.substring(0, max);
+    }
+}
