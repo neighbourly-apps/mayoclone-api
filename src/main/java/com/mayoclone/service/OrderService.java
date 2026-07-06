@@ -3,6 +3,9 @@ package com.mayoclone.service;
 import com.mayoclone.domain.Aggregator;
 import com.mayoclone.domain.IrctcOrder;
 import com.mayoclone.domain.OrderItem;
+import com.mayoclone.domain.OrderStatus;
+import com.mayoclone.domain.OrderType;
+import com.mayoclone.domain.PaymentMode;
 import com.mayoclone.domain.Vendor;
 import com.mayoclone.dto.InvoiceDto;
 import com.mayoclone.dto.OrderDto;
@@ -32,15 +35,18 @@ public class OrderService {
     private final AggregatorRepository aggregatorRepo;
     private final VendorRepository vendorRepo;
     private final CurrentAccountService currentAccount;
+    private final OrderMapper mapper;
 
     public OrderService(IrctcOrderRepository orderRepo,
                         AggregatorRepository aggregatorRepo,
                         VendorRepository vendorRepo,
-                        CurrentAccountService currentAccount) {
+                        CurrentAccountService currentAccount,
+                        OrderMapper mapper) {
         this.orderRepo = orderRepo;
         this.aggregatorRepo = aggregatorRepo;
         this.vendorRepo = vendorRepo;
         this.currentAccount = currentAccount;
+        this.mapper = mapper;
     }
 
     /**
@@ -48,7 +54,8 @@ public class OrderService {
      * filters optional and combinable; filtering is done in-memory over the
      * account-scoped, ordered result set.
      */
-    public List<OrderDto> list(String aggregatorCode, String station, LocalDate date, String trainNumber) {
+    public List<OrderDto> list(String aggregatorCode, String station, LocalDate date, String trainNumber,
+                               OrderStatus status, OrderType orderType, PaymentMode paymentMode, Long riderId) {
         Long accountId = currentAccount.accountId();
         return orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId).stream()
                 .filter(o -> aggregatorCode == null
@@ -57,12 +64,16 @@ public class OrderService {
                 .filter(o -> station == null || station.equalsIgnoreCase(o.getDeliveryStationCode()))
                 .filter(o -> date == null || date.equals(o.getDeliveryDate()))
                 .filter(o -> trainNumber == null || trainNumber.equalsIgnoreCase(o.getTrainNumber()))
-                .map(OrderDto::from)
+                .filter(o -> status == null || status == o.getStatus())
+                .filter(o -> orderType == null || orderType == o.getOrderType())
+                .filter(o -> paymentMode == null || paymentMode == o.getPaymentMode())
+                .filter(o -> riderId == null || riderId.equals(o.getRiderId()))
+                .map(mapper::toDto)
                 .toList();
     }
 
     public OrderDto get(Long id) {
-        return OrderDto.from(find(id));
+        return mapper.toDto(find(id));
     }
 
     public OrderStatsDto stats() {

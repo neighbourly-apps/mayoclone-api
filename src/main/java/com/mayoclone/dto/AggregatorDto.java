@@ -2,6 +2,7 @@ package com.mayoclone.dto;
 
 import com.mayoclone.domain.Aggregator;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -15,6 +16,7 @@ public record AggregatorDto(
         String brandColor,
         String websiteUrl,
         boolean active,
+        BigDecimal commissionRate,
         Instant createdAt
 ) {
 
@@ -28,6 +30,7 @@ public record AggregatorDto(
                 a.getBrandColor(),
                 a.getWebsiteUrl(),
                 a.isActive(),
+                a.getCommissionRate(),
                 a.getCreatedAt()
         );
     }

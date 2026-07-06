@@ -73,9 +73,10 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             "(?:Phone|Mobile|Contact)\\s*(?:No\\.?)?\\s*[:#-]?\\s*(\\d{10})",
             Pattern.CASE_INSENSITIVE);
 
-    // "Delivery Date: 2026-07-08" / "08/07/2026" / "08 Jul 2026"
+    // "Delivery Date: 2026-07-08" / "Delivery: 2026-07-08 19:30" / "08/07/2026" / "08 Jul 2026".
+    // "Date" is optional so a bare "Delivery: <date>" line (date without the label) also matches.
     protected static final Pattern DELIVERY_DATE = Pattern.compile(
-            "Delivery\\s*Date\\s*[:#-]?\\s*"
+            "Delivery\\s*(?:Date)?\\s*[:#-]?\\s*"
                     + "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}[/-]\\d{1,2}[/-]\\d{4}|\\d{1,2}\\s+[A-Za-z]{3,9}\\s+\\d{4})",
             Pattern.CASE_INSENSITIVE);
 

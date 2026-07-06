@@ -15,6 +15,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-security")
 
+    // Real-time order push: STOMP over WebSocket (SockJS fallback), JWT-authed on CONNECT.
+    implementation("org.springframework.boot:spring-boot-starter-websocket")
+
     // Flyway (Postgres) — owns the schema; Spring Boot BOM manages the versions.
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")

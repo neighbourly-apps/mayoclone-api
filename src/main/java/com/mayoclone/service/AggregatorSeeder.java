@@ -55,6 +55,7 @@ public class AggregatorSeeder implements CommandLineRunner {
         a.setBrandColor(brandColor);
         a.setWebsiteUrl(website);
         a.setActive(true);
+        a.setCommissionRate(new java.math.BigDecimal("0.15")); // default 15% commission
         a.setCreatedAt(Instant.now());
         return a;
     }

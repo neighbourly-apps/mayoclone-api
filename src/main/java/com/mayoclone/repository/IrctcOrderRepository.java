@@ -20,6 +20,15 @@ public interface IrctcOrderRepository extends JpaRepository<IrctcOrder, Long> {
 
     long countByAccountIdAndDeliveryDate(Long accountId, LocalDate deliveryDate);
 
+    /** All of a tenant's orders for one delivery date (feeds the daily dashboard). */
+    List<IrctcOrder> findByAccountIdAndDeliveryDate(Long accountId, LocalDate deliveryDate);
+
+    /**
+     * A tenant's orders whose delivery date falls in [from, to] inclusive.
+     * Feeds settlement/reconciliation and the reporting/analytics summary.
+     */
+    List<IrctcOrder> findByAccountIdAndDeliveryDateBetween(Long accountId, LocalDate from, LocalDate to);
+
     // ---- Dedup (global: an aggregator's external order id is globally unique) ----
 
     boolean existsBySourceMessageId(String sourceMessageId);

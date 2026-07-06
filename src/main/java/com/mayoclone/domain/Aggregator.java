@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +64,13 @@ public class Aggregator {
     private String websiteUrl;
 
     private boolean active = true;
+
+    /**
+     * Commission this aggregator charges, as a fraction (0.15 = 15%). Drives
+     * settlement/reconciliation math. Defaults to 0.15.
+     */
+    @Column(name = "commission_rate", precision = 5, scale = 4, nullable = false)
+    private BigDecimal commissionRate = new BigDecimal("0.15");
 
     private Instant createdAt;
 
@@ -131,6 +139,14 @@ public class Aggregator {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    public BigDecimal getCommissionRate() {
+        return commissionRate;
+    }
+
+    public void setCommissionRate(BigDecimal commissionRate) {
+        this.commissionRate = commissionRate;
     }
 
     public Instant getCreatedAt() {

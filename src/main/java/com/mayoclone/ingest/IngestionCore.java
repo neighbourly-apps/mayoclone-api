@@ -5,6 +5,9 @@ import com.mayoclone.domain.IngestFailure;
 import com.mayoclone.domain.IngestFailureReason;
 import com.mayoclone.domain.IrctcOrder;
 import com.mayoclone.domain.MailSourceType;
+import com.mayoclone.domain.OrderStatus;
+import com.mayoclone.domain.OrderType;
+import com.mayoclone.domain.PaymentMode;
 import com.mayoclone.dto.IngestResult;
 import com.mayoclone.observability.AppMetrics;
 import com.mayoclone.parser.IrctcEmailParser;
@@ -12,13 +15,16 @@ import com.mayoclone.parser.ParsedOrder;
 import com.mayoclone.repository.IngestFailureRepository;
 import com.mayoclone.repository.IrctcOrderRepository;
 import com.mayoclone.service.AggregatorService;
+import com.mayoclone.service.OrderCommandService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * The single source-agnostic pipeline: route → parse → dedup → save for one
@@ -32,22 +38,30 @@ public class IngestionCore {
     private static final Logger log = LoggerFactory.getLogger(IngestionCore.class);
     private static final int SNIPPET_MAX = 2000;
 
+    /** Heuristic: an email body that clearly signals cash / COD payment. */
+    private static final Pattern COD_HINT = Pattern.compile(
+            "cash\\s*on\\s*delivery|pay\\s*on\\s*delivery|pay\\s*at\\s*delivery|cash\\s*payment|\\bCOD\\b",
+            Pattern.CASE_INSENSITIVE);
+
     private final List<IrctcEmailParser> parsers;
     private final IrctcOrderRepository orderRepo;
     private final AggregatorService aggregatorService;
     private final IngestFailureRepository failureRepo;
     private final AppMetrics metrics;
+    private final OrderCommandService orderCommandService;
 
     public IngestionCore(List<IrctcEmailParser> parsers,
                          IrctcOrderRepository orderRepo,
                          AggregatorService aggregatorService,
                          IngestFailureRepository failureRepo,
-                         AppMetrics metrics) {
+                         AppMetrics metrics,
+                         OrderCommandService orderCommandService) {
         this.parsers = parsers;
         this.orderRepo = orderRepo;
         this.aggregatorService = aggregatorService;
         this.failureRepo = failureRepo;
         this.metrics = metrics;
+        this.orderCommandService = orderCommandService;
     }
 
     /**
@@ -92,8 +106,10 @@ public class IngestionCore {
             return new IngestResult(1, 0);
         }
 
-        orderRepo.save(toEntity(parsed, agg.get(), accountId, vendorId));
+        IrctcOrder saved = orderRepo.save(toEntity(parsed, agg.get(), accountId, vendorId, msg.body()));
         metrics.orderIngested(agg.get().getCode(), sourceType == null ? null : sourceType.name());
+        // Record the initial NEW status event + push a realtime NEW_ORDER event.
+        orderCommandService.recordCreated(saved);
         return new IngestResult(1, 1);
     }
 
@@ -114,7 +130,7 @@ public class IngestionCore {
         metrics.ingestFailure(reason.name());
     }
 
-    private IrctcOrder toEntity(ParsedOrder p, Aggregator aggregator, Long accountId, Long vendorId) {
+    private IrctcOrder toEntity(ParsedOrder p, Aggregator aggregator, Long accountId, Long vendorId, String body) {
         IrctcOrder o = new IrctcOrder();
         o.setAggregator(aggregator);
         o.setAccountId(accountId);
@@ -130,17 +146,28 @@ public class IngestionCore {
         o.setDeliveryStationName(p.deliveryStationName());
         o.setPassengerName(p.passengerName() != null ? p.passengerName() : "Unknown");
         o.setPassengerPhone(p.passengerPhone());
-        o.setDeliveryDate(p.deliveryDate());
+        // An order with no parseable delivery date must still be actionable "today"
+        // instead of vanishing from the Daily Business board / reports / settlement,
+        // which all window on deliveryDate. Fall back to the arrival day.
+        o.setDeliveryDate(p.deliveryDate() != null ? p.deliveryDate() : LocalDate.now());
         o.setDeliverySlot(p.deliverySlot());
         o.setAmount(p.amount());
         o.setCurrency(p.currency() != null ? p.currency() : "INR");
-        o.setStatus(p.status() != null ? p.status() : "CONFIRMED");
+        // Ingested orders are ONLINE; a fresh order enters the lifecycle at NEW.
+        o.setOrderType(OrderType.ONLINE);
+        o.setPaymentMode(detectPaymentMode(body));
+        o.setStatus(OrderStatus.NEW);
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
         o.setItems(p.items());
         o.setPlacedAt(Instant.now());
         o.setCreatedAt(Instant.now());
         return o;
+    }
+
+    /** COD when the email body clearly indicates cash/COD payment, else PREPAID. */
+    private static PaymentMode detectPaymentMode(String body) {
+        return body != null && COD_HINT.matcher(body).find() ? PaymentMode.COD : PaymentMode.PREPAID;
     }
 
     private static String truncate(String s, int max) {

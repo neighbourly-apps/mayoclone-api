@@ -4,6 +4,8 @@ import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -41,7 +43,9 @@ import java.util.List;
         indexes = {
                 @Index(name = "idx_order_account_placed", columnList = "account_id, placed_at"),
                 @Index(name = "idx_order_account_station", columnList = "account_id, delivery_station_code"),
-                @Index(name = "idx_order_account_date", columnList = "account_id, delivery_date")
+                @Index(name = "idx_order_account_date", columnList = "account_id, delivery_date"),
+                @Index(name = "idx_order_account_status", columnList = "account_id, status"),
+                @Index(name = "idx_order_account_rider", columnList = "account_id, rider_id")
         }
 )
 public class IrctcOrder {
@@ -50,8 +54,9 @@ public class IrctcOrder {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "aggregator_id")
+    /** Owning aggregator; nullable — DIRECT (walk-in/phone) orders have none. */
+    @ManyToOne(fetch = FetchType.EAGER, optional = true)
+    @JoinColumn(name = "aggregator_id", nullable = true)
     private Aggregator aggregator;
 
     /** Owning tenant/business. Never set from a request body — derived from the caller/vendor. */
@@ -84,7 +89,28 @@ public class IrctcOrder {
 
     private BigDecimal amount;
     private String currency = "INR";
-    private String status;
+
+    /** How the order entered the system (default ONLINE for ingested orders). */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private OrderType orderType = OrderType.ONLINE;
+
+    /** Prepaid vs cash-on-delivery. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    private PaymentMode paymentMode = PaymentMode.PREPAID;
+
+    /** Fulfilment lifecycle state. Starts at NEW. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private OrderStatus status = OrderStatus.NEW;
+
+    /** Assigned rider (nullable FK to {@link Rider}); null when unassigned. */
+    @Column(name = "rider_id")
+    private Long riderId;
+
+    private Instant assignedAt;
+    private Instant deliveredAt;
 
     @Column(length = 1000)
     private String subject;
@@ -258,12 +284,52 @@ public class IrctcOrder {
         this.currency = currency;
     }
 
-    public String getStatus() {
+    public OrderType getOrderType() {
+        return orderType;
+    }
+
+    public void setOrderType(OrderType orderType) {
+        this.orderType = orderType;
+    }
+
+    public PaymentMode getPaymentMode() {
+        return paymentMode;
+    }
+
+    public void setPaymentMode(PaymentMode paymentMode) {
+        this.paymentMode = paymentMode;
+    }
+
+    public OrderStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(OrderStatus status) {
         this.status = status;
+    }
+
+    public Long getRiderId() {
+        return riderId;
+    }
+
+    public void setRiderId(Long riderId) {
+        this.riderId = riderId;
+    }
+
+    public Instant getAssignedAt() {
+        return assignedAt;
+    }
+
+    public void setAssignedAt(Instant assignedAt) {
+        this.assignedAt = assignedAt;
+    }
+
+    public Instant getDeliveredAt() {
+        return deliveredAt;
+    }
+
+    public void setDeliveredAt(Instant deliveredAt) {
+        this.deliveredAt = deliveredAt;
     }
 
     public String getSubject() {

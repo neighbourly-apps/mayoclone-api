@@ -1,13 +1,20 @@
 package com.mayoclone.dto;
 
 import com.mayoclone.domain.IrctcOrder;
+import com.mayoclone.domain.OrderStatus;
+import com.mayoclone.domain.OrderType;
+import com.mayoclone.domain.PaymentMode;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
-/** Full read view of an IRCTC order, with a nested aggregator summary. */
+/**
+ * Full read view of an IRCTC order. The nested {@link AggregatorSummaryDto} is
+ * {@code null} for DIRECT (walk-in/phone) orders. Lifecycle fields (status,
+ * rider, timestamps) and the {@code statusHistory} timeline are included.
+ */
 public record OrderDto(
         Long id,
         AggregatorSummaryDto aggregator,
@@ -27,14 +34,22 @@ public record OrderDto(
         String deliverySlot,
         BigDecimal amount,
         String currency,
-        String status,
+        OrderType orderType,
+        PaymentMode paymentMode,
+        OrderStatus status,
+        Long riderId,
+        String riderName,
+        Instant assignedAt,
+        Instant deliveredAt,
         List<OrderItemDto> items,
+        List<StatusEventDto> statusHistory,
         String subject,
         Instant placedAt,
         Instant createdAt
 ) {
 
-    public static OrderDto from(IrctcOrder o) {
+    /** Build a DTO with the rider name and status timeline already resolved. */
+    public static OrderDto from(IrctcOrder o, String riderName, List<StatusEventDto> statusHistory) {
         return new OrderDto(
                 o.getId(),
                 AggregatorSummaryDto.from(o.getAggregator()),
@@ -54,8 +69,15 @@ public record OrderDto(
                 o.getDeliverySlot(),
                 o.getAmount(),
                 o.getCurrency(),
+                o.getOrderType(),
+                o.getPaymentMode(),
                 o.getStatus(),
+                o.getRiderId(),
+                riderName,
+                o.getAssignedAt(),
+                o.getDeliveredAt(),
                 o.getItems().stream().map(OrderItemDto::from).toList(),
+                statusHistory,
                 o.getSubject(),
                 o.getPlacedAt(),
                 o.getCreatedAt()

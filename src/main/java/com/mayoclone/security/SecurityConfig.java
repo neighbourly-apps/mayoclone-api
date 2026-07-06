@@ -97,6 +97,9 @@ public class SecurityConfig {
                                 "/api/auth/refresh", "/api/auth/logout").permitAll()
                         .requestMatchers("/api/inbound/**").permitAll()
                         .requestMatchers("/api/demo/**").permitAll()
+                        // STOMP/SockJS handshake is public; the CONNECT frame is JWT-authed
+                        // by StompAuthChannelInterceptor (rejects a missing/invalid token).
+                        .requestMatchers("/ws/**").permitAll()
                         // Gmail OAuth callback: public route, but the SIGNED state is
                         // validated in the handler to recover the account. /connect stays authenticated.
                         .requestMatchers(HttpMethod.GET, "/api/mail/gmail/callback").permitAll()

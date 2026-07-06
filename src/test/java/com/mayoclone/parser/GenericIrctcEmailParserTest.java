@@ -92,4 +92,23 @@ class GenericIrctcEmailParserTest {
     void supportsAnyRoutedAggregator() {
         assertTrue(parser.supports(agg("GOFOODIE"), "x@gofoodieonline.com", "any"));
     }
+
+    @Test
+    void parsesDeliveryDateWithoutTheDateLabel() {
+        // "Delivery: <date> <time>" — the date without an explicit "Date" label,
+        // as seen in the wild. Must still extract the delivery date so the order
+        // shows up on the Daily Business board / reports.
+        String body = """
+                Booking ID: ZP778
+                PNR: 4455667788
+                Train No.: 12951 Mumbai Rajdhani
+                Delivery Station: BPL Bhopal
+                Passenger: Anita Rao 9812345678
+                Delivery: 2026-07-06 19:30-20:00
+                2 x Veg Thali - Rs.180
+                Total: Rs.360
+                """;
+        ParsedOrder p = parser.parse(agg("ZOOP"), "orders@zoopindia.com", "Zoop order", body, "<zp778@zoop>");
+        assertEquals(LocalDate.of(2026, 7, 6), p.deliveryDate());
+    }
 }

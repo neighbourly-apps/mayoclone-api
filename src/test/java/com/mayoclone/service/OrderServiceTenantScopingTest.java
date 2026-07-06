@@ -3,6 +3,8 @@ package com.mayoclone.service;
 import com.mayoclone.domain.IrctcOrder;
 import com.mayoclone.repository.AggregatorRepository;
 import com.mayoclone.repository.IrctcOrderRepository;
+import com.mayoclone.repository.OrderStatusEventRepository;
+import com.mayoclone.repository.RiderRepository;
 import com.mayoclone.repository.VendorRepository;
 import com.mayoclone.security.CurrentAccountService;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,6 +16,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -36,7 +39,11 @@ class OrderServiceTenantScopingTest {
         AggregatorRepository aggregatorRepo = mock(AggregatorRepository.class);
         VendorRepository vendorRepo = mock(VendorRepository.class);
         currentAccount = mock(CurrentAccountService.class);
-        service = new OrderService(orderRepo, aggregatorRepo, vendorRepo, currentAccount);
+        RiderRepository riderRepo = mock(RiderRepository.class);
+        OrderStatusEventRepository eventRepo = mock(OrderStatusEventRepository.class);
+        when(eventRepo.findByOrderIdOrderByAtAsc(any())).thenReturn(List.of());
+        OrderMapper mapper = new OrderMapper(riderRepo, eventRepo);
+        service = new OrderService(orderRepo, aggregatorRepo, vendorRepo, currentAccount, mapper);
     }
 
     @Test
@@ -44,7 +51,7 @@ class OrderServiceTenantScopingTest {
         when(currentAccount.accountId()).thenReturn(55L);
         when(orderRepo.findByAccountIdOrderByPlacedAtDesc(55L)).thenReturn(List.of());
 
-        service.list(null, null, null, null);
+        service.list(null, null, null, null, null, null, null, null);
 
         verify(orderRepo).findByAccountIdOrderByPlacedAtDesc(eq(55L));
     }

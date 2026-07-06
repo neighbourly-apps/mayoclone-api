@@ -12,6 +12,7 @@ import com.mayoclone.parser.ParsedOrder;
 import com.mayoclone.repository.IngestFailureRepository;
 import com.mayoclone.repository.IrctcOrderRepository;
 import com.mayoclone.service.AggregatorService;
+import com.mayoclone.service.OrderCommandService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +48,9 @@ class IngestionCoreTest {
         failureRepo = mock(IngestFailureRepository.class);
         parser = mock(IrctcEmailParser.class);
         AppMetrics metrics = new AppMetrics(new SimpleMeterRegistry());
-        core = new IngestionCore(List.of(parser), orderRepo, aggregatorService, failureRepo, metrics);
+        OrderCommandService orderCommandService = mock(OrderCommandService.class);
+        core = new IngestionCore(List.of(parser), orderRepo, aggregatorService, failureRepo, metrics,
+                orderCommandService);
     }
 
     private static RawMessage msg() {

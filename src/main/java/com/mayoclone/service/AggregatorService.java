@@ -118,5 +118,8 @@ public class AggregatorService {
         a.setBrandColor(req.brandColor());
         a.setWebsiteUrl(req.websiteUrl());
         a.setActive(req.active() == null || req.active()); // default true
+        a.setCommissionRate(req.commissionRate() != null
+                ? req.commissionRate()
+                : new java.math.BigDecimal("0.15")); // default 15%
     }
 }
