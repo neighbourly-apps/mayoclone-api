@@ -1,7 +1,7 @@
 plugins {
     java
     id("org.springframework.boot") version "3.3.6"
-    id("io.spring.dependency-management") version "1.1.6"
+    id("io.spring.dependency-management") version "1.1.7"
 }
 group = "com.mayoclone"
 version = "0.1.0-SNAPSHOT"
@@ -20,12 +20,12 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
 
     // JWT (access tokens) — HS256 signed.
-    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
-    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
-    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
+    implementation("io.jsonwebtoken:jjwt-api:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.13.0")
+    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.13.0")
 
     // Argon2 password hashing needs BouncyCastle at runtime.
-    runtimeOnly("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    runtimeOnly("org.bouncycastle:bcprov-jdk18on:1.84")
 
     // Rate limiting.
     implementation("com.bucket4j:bucket4j-core:8.10.1")
