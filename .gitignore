@@ -1,0 +1,25 @@
+# --- Java / Gradle ---
+build/
+.gradle/
+HELP.md
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- secrets ---
+.env
+.env.local
+*.pem
+*.key
+
+# --- logs ---
+logs/
+*.log
