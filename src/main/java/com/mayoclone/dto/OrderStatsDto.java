@@ -1,14 +1,24 @@
 package com.mayoclone.dto;
 
 import java.math.BigDecimal;
-import java.util.Map;
+import java.util.List;
 
 /**
- * Aggregate order statistics.
+ * Aggregate order statistics for the dashboard.
  *
  * @param total         total number of orders
  * @param totalRevenue  sum of all order amounts
- * @param byAggregator  order counts keyed by aggregator name (ZOMATO/SWIGGY/UBER_EATS)
+ * @param byAggregator  per-aggregator counts (from the managed aggregator table)
+ * @param upcomingToday orders whose deliveryDate is today
  */
-public record OrderStatsDto(long total, BigDecimal totalRevenue, Map<String, Long> byAggregator) {
+public record OrderStatsDto(
+        long total,
+        BigDecimal totalRevenue,
+        List<AggregatorCount> byAggregator,
+        long upcomingToday
+) {
+
+    /** One row of the {@code byAggregator} breakdown. */
+    public record AggregatorCount(String code, String name, String brandColor, long count) {
+    }
 }

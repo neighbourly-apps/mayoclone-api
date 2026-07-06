@@ -6,7 +6,7 @@ import java.math.BigDecimal;
 
 /**
  * A single line item on an order. Persisted as part of an
- * {@link jakarta.persistence.ElementCollection} on {@link OrderRecord},
+ * {@link jakarta.persistence.ElementCollection} on {@link IrctcOrder},
  * which yields clean per-item rows and clean JSON output.
  */
 @Embeddable

@@ -1,46 +1,142 @@
 package com.mayoclone.service;
 
 import com.mayoclone.domain.Aggregator;
-import com.mayoclone.domain.OrderRecord;
+import com.mayoclone.domain.IrctcOrder;
+import com.mayoclone.domain.OrderItem;
+import com.mayoclone.domain.Vendor;
+import com.mayoclone.dto.InvoiceDto;
 import com.mayoclone.dto.OrderDto;
 import com.mayoclone.dto.OrderStatsDto;
-import com.mayoclone.repository.OrderRecordRepository;
+import com.mayoclone.repository.AggregatorRepository;
+import com.mayoclone.repository.IrctcOrderRepository;
+import com.mayoclone.repository.VendorRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.util.LinkedHashMap;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
-/** Read-side queries and aggregate stats over stored orders. */
+import static org.springframework.http.HttpStatus.NOT_FOUND;
+
+/** Read-side queries, aggregate stats, and invoicing over stored orders. */
 @Service
 public class OrderService {
 
-    private final OrderRecordRepository orderRepo;
+    private static final BigDecimal TAX_RATE_PCT = new BigDecimal("5");
 
-    public OrderService(OrderRecordRepository orderRepo) {
+    private final IrctcOrderRepository orderRepo;
+    private final AggregatorRepository aggregatorRepo;
+    private final VendorRepository vendorRepo;
+
+    public OrderService(IrctcOrderRepository orderRepo,
+                        AggregatorRepository aggregatorRepo,
+                        VendorRepository vendorRepo) {
         this.orderRepo = orderRepo;
+        this.aggregatorRepo = aggregatorRepo;
+        this.vendorRepo = vendorRepo;
     }
 
-    /** All orders (optionally filtered by aggregator), newest first. */
-    public List<OrderDto> list(Aggregator aggregator) {
-        List<OrderRecord> records = (aggregator == null)
-                ? orderRepo.findAllByOrderByPlacedAtDesc()
-                : orderRepo.findByAggregatorOrderByPlacedAtDesc(aggregator);
-        return records.stream().map(OrderDto::from).toList();
+    /**
+     * Orders newest first (placedAt desc), with all filters optional and
+     * combinable. Filtering is done in-memory over the ordered result set.
+     */
+    public List<OrderDto> list(String aggregatorCode, String station, LocalDate date, String trainNumber) {
+        return orderRepo.findAllByOrderByPlacedAtDesc().stream()
+                .filter(o -> aggregatorCode == null
+                        || (o.getAggregator() != null
+                        && aggregatorCode.equalsIgnoreCase(o.getAggregator().getCode())))
+                .filter(o -> station == null || station.equalsIgnoreCase(o.getDeliveryStationCode()))
+                .filter(o -> date == null || date.equals(o.getDeliveryDate()))
+                .filter(o -> trainNumber == null || trainNumber.equalsIgnoreCase(o.getTrainNumber()))
+                .map(OrderDto::from)
+                .toList();
+    }
+
+    public OrderDto get(Long id) {
+        return OrderDto.from(find(id));
     }
 
     public OrderStatsDto stats() {
-        List<OrderRecord> all = orderRepo.findAll();
+        List<IrctcOrder> all = orderRepo.findAll();
         BigDecimal revenue = all.stream()
                 .map(o -> o.getAmount() != null ? o.getAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Preserve enum declaration order and always include every aggregator (even zero).
-        Map<String, Long> byAggregator = new LinkedHashMap<>();
-        for (Aggregator agg : Aggregator.values()) {
-            byAggregator.put(agg.name(), orderRepo.countByAggregator(agg));
-        }
-        return new OrderStatsDto(all.size(), revenue, byAggregator);
+        // Counts come from the managed aggregator table (every aggregator, even zero).
+        List<OrderStatsDto.AggregatorCount> byAggregator = aggregatorRepo.findAll().stream()
+                .map(agg -> new OrderStatsDto.AggregatorCount(
+                        agg.getCode(), agg.getName(), agg.getBrandColor(),
+                        orderRepo.countByAggregator(agg)))
+                .toList();
+
+        long upcomingToday = orderRepo.countByDeliveryDate(LocalDate.now());
+        return new OrderStatsDto(all.size(), revenue, byAggregator, upcomingToday);
+    }
+
+    /**
+     * Build a printable invoice for one order. GST on food is 5%.
+     *
+     * <p>Source of truth for the subtotal: if the order carries an explicit
+     * total ({@code amount}) it is used as the subtotal; otherwise we sum the
+     * line items. tax = 5% of subtotal, total = subtotal + tax.
+     */
+    public InvoiceDto invoice(Long id) {
+        IrctcOrder o = find(id);
+
+        List<InvoiceDto.Line> lines = o.getItems().stream()
+                .map(this::toLine)
+                .toList();
+
+        BigDecimal itemsTotal = lines.stream()
+                .map(InvoiceDto.Line::lineTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal subTotal = (o.getAmount() != null && o.getAmount().signum() > 0)
+                ? o.getAmount()
+                : itemsTotal;
+
+        BigDecimal taxAmount = subTotal.multiply(TAX_RATE_PCT)
+                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
+        BigDecimal total = subTotal.add(taxAmount);
+
+        Vendor vendor = o.getVendorId() == null ? null
+                : vendorRepo.findById(o.getVendorId()).orElse(null);
+        InvoiceDto.Vendor vendorView = vendor == null ? null : new InvoiceDto.Vendor(
+                vendor.getRestaurantName(), vendor.getGstin(), vendor.getAddressLine(),
+                vendor.getStationCode(), vendor.getPhone());
+
+        Aggregator agg = o.getAggregator();
+        InvoiceDto.Order orderView = new InvoiceDto.Order(
+                o.getExternalOrderId(), o.getPnr(), o.getTrainNumber(), o.getTrainName(),
+                o.getCoach(), o.getBerth(), o.getDeliveryStationCode(), o.getDeliveryStationName(),
+                o.getPassengerName(), o.getDeliveryDate(), o.getDeliverySlot(),
+                agg == null ? null : agg.getName());
+
+        return new InvoiceDto(
+                String.format("MC-INV-%06d", o.getId()),
+                Instant.now(),
+                vendorView,
+                orderView,
+                lines,
+                subTotal,
+                TAX_RATE_PCT,
+                taxAmount,
+                total,
+                o.getCurrency() != null ? o.getCurrency() : "INR"
+        );
+    }
+
+    private InvoiceDto.Line toLine(OrderItem item) {
+        BigDecimal price = item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO;
+        BigDecimal lineTotal = price.multiply(BigDecimal.valueOf(item.getQty()));
+        return new InvoiceDto.Line(item.getName(), item.getQty(), price, lineTotal);
+    }
+
+    private IrctcOrder find(Long id) {
+        return orderRepo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Order " + id + " not found"));
     }
 }

@@ -1,9 +1,9 @@
 package com.mayoclone.web;
 
-import com.mayoclone.dto.CreateMailAccountRequest;
+import com.mayoclone.dto.CreateVendorRequest;
 import com.mayoclone.dto.IngestResult;
-import com.mayoclone.dto.MailAccountDto;
-import com.mayoclone.service.MailAccountService;
+import com.mayoclone.dto.VendorDto;
+import com.mayoclone.service.VendorService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,36 +18,38 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+/** Vendor signup + management. Passwords are never returned. */
 @RestController
-@RequestMapping("/api/mail-accounts")
-public class MailAccountController {
+@RequestMapping("/api/vendors")
+public class VendorController {
 
-    private final MailAccountService accountService;
+    private final VendorService vendorService;
 
-    public MailAccountController(MailAccountService accountService) {
-        this.accountService = accountService;
+    public VendorController(VendorService vendorService) {
+        this.vendorService = vendorService;
     }
 
     @GetMapping
-    public List<MailAccountDto> list() {
-        return accountService.list();
+    public List<VendorDto> list() {
+        return vendorService.list();
     }
 
+    /** Vendor signup: shares their mailbox so we can scrape aggregator orders. */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public MailAccountDto create(@Valid @RequestBody CreateMailAccountRequest request) {
-        return accountService.create(request);
+    public VendorDto create(@Valid @RequestBody CreateVendorRequest request) {
+        return vendorService.create(request);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long id) {
-        accountService.delete(id);
+        vendorService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
-    /** Trigger an on-demand IMAP sync for a single account. */
+    /** Trigger an on-demand IMAP sync for a single vendor. */
     @PostMapping("/{id}/sync")
     public IngestResult sync(@PathVariable Long id) {
-        return accountService.sync(id);
+        return vendorService.sync(id);
     }
 }

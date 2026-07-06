@@ -1,20 +1,21 @@
 package com.mayoclone.repository;
 
 import com.mayoclone.domain.Aggregator;
-import com.mayoclone.domain.OrderRecord;
+import com.mayoclone.domain.IrctcOrder;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDate;
 import java.util.List;
 
-public interface OrderRecordRepository extends JpaRepository<OrderRecord, Long> {
+public interface IrctcOrderRepository extends JpaRepository<IrctcOrder, Long> {
 
-    List<OrderRecord> findAllByOrderByPlacedAtDesc();
-
-    List<OrderRecord> findByAggregatorOrderByPlacedAtDesc(Aggregator aggregator);
+    List<IrctcOrder> findAllByOrderByPlacedAtDesc();
 
     boolean existsBySourceMessageId(String sourceMessageId);
 
     boolean existsByAggregatorAndExternalOrderId(Aggregator aggregator, String externalOrderId);
 
     long countByAggregator(Aggregator aggregator);
+
+    long countByDeliveryDate(LocalDate deliveryDate);
 }

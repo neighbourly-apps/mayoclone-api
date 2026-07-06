@@ -1,12 +1,13 @@
 package com.mayoclone.service;
 
-import com.mayoclone.domain.MailAccount;
-import com.mayoclone.domain.OrderRecord;
+import com.mayoclone.domain.Aggregator;
+import com.mayoclone.domain.IrctcOrder;
+import com.mayoclone.domain.Vendor;
 import com.mayoclone.dto.IngestResult;
-import com.mayoclone.parser.AggregatorEmailParser;
+import com.mayoclone.parser.IrctcEmailParser;
 import com.mayoclone.parser.ParsedOrder;
-import com.mayoclone.repository.MailAccountRepository;
-import com.mayoclone.repository.OrderRecordRepository;
+import com.mayoclone.repository.IrctcOrderRepository;
+import com.mayoclone.repository.VendorRepository;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
@@ -28,44 +29,50 @@ import java.util.Optional;
 import java.util.Properties;
 
 /**
- * Connects to mailboxes over IMAP, extracts order emails, runs them through the
- * registered parsers, and stores the resulting orders (deduplicated).
+ * Connects to vendor mailboxes over IMAP, extracts IRCTC e-catering order
+ * emails, routes each to an {@link Aggregator} (via the managed aggregator table
+ * by sender domain), runs the matching parser, and stores the resulting orders
+ * (deduplicated).
  *
- * <p>{@link #ingestRaw} exposes the parse -> store path without IMAP so the
- * demo endpoint (and tests) can exercise the full pipeline with no real mailbox.
+ * <p>{@link #ingestRaw} exposes the route -> parse -> store path without IMAP so
+ * the demo endpoint (and tests) can exercise the full pipeline with no mailbox.
  */
 @Service
 public class ImapIngestionService {
 
     private static final Logger log = LoggerFactory.getLogger(ImapIngestionService.class);
 
-    private final List<AggregatorEmailParser> parsers;
-    private final OrderRecordRepository orderRepo;
-    private final MailAccountRepository accountRepo;
+    private final List<IrctcEmailParser> parsers;
+    private final IrctcOrderRepository orderRepo;
+    private final VendorRepository vendorRepo;
+    private final AggregatorService aggregatorService;
 
-    public ImapIngestionService(List<AggregatorEmailParser> parsers,
-                                OrderRecordRepository orderRepo,
-                                MailAccountRepository accountRepo) {
+    public ImapIngestionService(List<IrctcEmailParser> parsers,
+                                IrctcOrderRepository orderRepo,
+                                VendorRepository vendorRepo,
+                                AggregatorService aggregatorService) {
         this.parsers = parsers;
         this.orderRepo = orderRepo;
-        this.accountRepo = accountRepo;
+        this.vendorRepo = vendorRepo;
+        this.aggregatorService = aggregatorService;
     }
 
-    /** Sync a single account: fetch UNSEEN messages, parse, and store new orders. */
-    public IngestResult syncAccount(MailAccount account) {
+    /** Sync a single vendor mailbox: fetch UNSEEN messages, parse, and store new orders. */
+    public IngestResult syncVendor(Vendor vendor) {
         Store store = null;
         Folder inbox = null;
         int fetched = 0;
         int newOrders = 0;
         try {
             Properties props = new Properties();
-            String protocol = account.isUseSsl() ? "imaps" : "imap";
+            String protocol = vendor.isUseSsl() ? "imaps" : "imap";
             props.put("mail.store.protocol", protocol);
 
             Session session = Session.getInstance(props);
             store = session.getStore(protocol);
-            store.connect(account.getImapHost(), account.getImapPort(),
-                    account.getUsername(), account.getPassword());
+            String username = (vendor.getImapUsername() == null || vendor.getImapUsername().isBlank())
+                    ? vendor.getOwnerEmail() : vendor.getImapUsername();
+            store.connect(vendor.getImapHost(), vendor.getImapPort(), username, vendor.getImapPassword());
 
             inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_ONLY);
@@ -79,19 +86,19 @@ public class ImapIngestionService {
                 String body = extractText(message);
                 String messageId = stableMessageId(message, subject);
 
-                if (ingestRaw(from, subject, body, messageId).newOrders() > 0) {
+                if (ingestRaw(from, subject, body, messageId, vendor.getId()).newOrders() > 0) {
                     newOrders++;
                 }
             }
 
-            account.setLastSyncedAt(Instant.now());
-            accountRepo.save(account);
+            vendor.setLastSyncedAt(Instant.now());
+            vendorRepo.save(vendor);
             return new IngestResult(fetched, newOrders);
         } catch (MessagingException e) {
             // Translate low-level mail errors into a clean, actionable message.
             throw new RuntimeException(
-                    "IMAP sync failed for account '" + account.getLabel() + "' ("
-                            + account.getImapHost() + ":" + account.getImapPort() + "): "
+                    "IMAP sync failed for vendor '" + vendor.getRestaurantName() + "' ("
+                            + vendor.getImapHost() + ":" + vendor.getImapPort() + "): "
                             + e.getMessage(), e);
         } finally {
             closeQuietly(inbox);
@@ -99,34 +106,43 @@ public class ImapIngestionService {
         }
     }
 
-    /** Sync every active account, aggregating the results. */
+    /** Sync every active vendor, aggregating the results. */
     public IngestResult syncAllActive() {
         IngestResult total = IngestResult.empty();
-        for (MailAccount account : accountRepo.findByActiveTrue()) {
+        for (Vendor vendor : vendorRepo.findByActiveTrue()) {
             try {
-                total = total.plus(syncAccount(account));
+                total = total.plus(syncVendor(vendor));
             } catch (RuntimeException e) {
                 // One bad mailbox shouldn't abort the whole sweep.
-                log.warn("Skipping account {}: {}", account.getLabel(), e.getMessage());
+                log.warn("Skipping vendor {}: {}", vendor.getRestaurantName(), e.getMessage());
             }
         }
         return total;
     }
 
     /**
-     * Run the parse -> dedup -> store path for a single raw email, bypassing IMAP.
-     * Returns fetched=1 always; newOrders=1 if a fresh order was stored, else 0.
+     * Run the route -> parse -> dedup -> store path for a single raw email,
+     * bypassing IMAP. Returns fetched=1 always; newOrders=1 if a fresh order was
+     * stored, else 0. {@code vendorId} may be null (e.g. demo orders).
      */
-    public IngestResult ingestRaw(String from, String subject, String body, String messageId) {
-        Optional<AggregatorEmailParser> parser = parsers.stream()
-                .filter(p -> p.supports(from, subject))
-                .findFirst();
-        if (parser.isEmpty()) {
-            log.debug("No parser matched email from '{}' subject '{}'", from, subject);
+    public IngestResult ingestRaw(String from, String subject, String body, String messageId, Long vendorId) {
+        // 1. Route the email to an aggregator by sender domain.
+        Optional<Aggregator> agg = aggregatorService.findBySender(from);
+        if (agg.isEmpty()) {
+            log.debug("No aggregator matched sender '{}'", from);
             return new IngestResult(1, 0);
         }
 
-        ParsedOrder parsed = parser.get().parse(from, subject, body, messageId);
+        // 2. Pick the first parser that supports this aggregator.
+        Optional<IrctcEmailParser> parser = parsers.stream()
+                .filter(p -> p.supports(agg.get(), from, subject))
+                .findFirst();
+        if (parser.isEmpty()) {
+            log.debug("No parser matched aggregator '{}'", agg.get().getCode());
+            return new IngestResult(1, 0);
+        }
+
+        ParsedOrder parsed = parser.get().parse(agg.get(), from, subject, body, messageId);
 
         // Dedup 1: same source email already ingested.
         if (parsed.sourceMessageId() != null
@@ -134,27 +150,38 @@ public class ImapIngestionService {
             return new IngestResult(1, 0);
         }
         // Dedup 2: same (aggregator, externalOrderId) already stored.
-        if (orderRepo.existsByAggregatorAndExternalOrderId(
-                parsed.aggregator(), parsed.externalOrderId())) {
+        if (orderRepo.existsByAggregatorAndExternalOrderId(agg.get(), parsed.externalOrderId())) {
             return new IngestResult(1, 0);
         }
 
-        orderRepo.save(toEntity(parsed));
+        orderRepo.save(toEntity(parsed, agg.get(), vendorId));
         return new IngestResult(1, 1);
     }
 
-    private OrderRecord toEntity(ParsedOrder p) {
-        OrderRecord o = new OrderRecord();
-        o.setAggregator(p.aggregator());
+    private IrctcOrder toEntity(ParsedOrder p, Aggregator aggregator, Long vendorId) {
+        IrctcOrder o = new IrctcOrder();
+        o.setAggregator(aggregator);
+        o.setVendorId(vendorId);
         o.setExternalOrderId(p.externalOrderId());
-        o.setCustomerName(p.customerName() != null ? p.customerName() : "Unknown");
+        o.setPnr(p.pnr());
+        o.setTrainNumber(p.trainNumber());
+        o.setTrainName(p.trainName());
+        o.setCoach(p.coach());
+        o.setBerth(p.berth());
+        o.setBoardingStationCode(p.boardingStationCode());
+        o.setDeliveryStationCode(p.deliveryStationCode());
+        o.setDeliveryStationName(p.deliveryStationName());
+        o.setPassengerName(p.passengerName() != null ? p.passengerName() : "Unknown");
+        o.setPassengerPhone(p.passengerPhone());
+        o.setDeliveryDate(p.deliveryDate());
+        o.setDeliverySlot(p.deliverySlot());
         o.setAmount(p.amount());
         o.setCurrency(p.currency() != null ? p.currency() : "INR");
-        o.setPlacedAt(p.placedAt() != null ? p.placedAt() : Instant.now());
-        o.setStatus(p.status() != null ? p.status() : "RECEIVED");
+        o.setStatus(p.status() != null ? p.status() : "CONFIRMED");
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
         o.setItems(p.items());
+        o.setPlacedAt(Instant.now());
         o.setCreatedAt(Instant.now());
         return o;
     }
