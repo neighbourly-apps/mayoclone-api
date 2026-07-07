@@ -41,6 +41,7 @@ public class MenuItemService {
         m.setAccountId(currentAccount.accountId());
         m.setName(req.name());
         m.setCategory(req.category());
+        m.setImageUrl(req.imageUrl());
         m.setPrice(req.price());
         m.setAvailable(req.available() == null || req.available()); // default true
         m.setCreatedAt(Instant.now());
@@ -55,6 +56,9 @@ public class MenuItemService {
         }
         if (req.category() != null) {
             m.setCategory(req.category());
+        }
+        if (req.imageUrl() != null) {
+            m.setImageUrl(req.imageUrl());
         }
         if (req.price() != null) {
             m.setPrice(req.price());

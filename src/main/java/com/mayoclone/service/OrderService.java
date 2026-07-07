@@ -76,6 +76,25 @@ public class OrderService {
         return mapper.toDto(find(id));
     }
 
+    /**
+     * Tenant-scoped, case-insensitive global search over externalOrderId, pnr,
+     * passengerPhone, passengerName, trainNumber and deliveryStationCode. Newest
+     * first; {@code limit} is clamped to 1..50 (blank query -> empty result).
+     */
+    public com.mayoclone.dto.SearchResponse search(String q, int limit) {
+        String query = q == null ? "" : q.trim();
+        int capped = Math.max(1, Math.min(limit, 50));
+        if (query.isEmpty()) {
+            return new com.mayoclone.dto.SearchResponse(query, 0, List.of());
+        }
+        Long accountId = currentAccount.accountId();
+        String like = "%" + query.toLowerCase() + "%";
+        List<OrderDto> orders = orderRepo
+                .search(accountId, like, org.springframework.data.domain.PageRequest.of(0, capped))
+                .stream().map(mapper::toDto).toList();
+        return new com.mayoclone.dto.SearchResponse(query, orders.size(), orders);
+    }
+
     public OrderStatsDto stats() {
         Long accountId = currentAccount.accountId();
         List<IrctcOrder> all = orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId);

@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 public record CreateMenuItemRequest(
         @NotBlank @Size(max = 255) String name,
         @Size(max = 255) String category,
+        @Size(max = 1024) String imageUrl,
         @NotNull @PositiveOrZero BigDecimal price,
         Boolean available
 ) {

@@ -4,11 +4,15 @@ import com.mayoclone.domain.OrderStatus;
 import com.mayoclone.domain.OrderType;
 import com.mayoclone.domain.PaymentMode;
 import com.mayoclone.dto.AssignRiderRequest;
+import com.mayoclone.dto.BulkAssignRequest;
+import com.mayoclone.dto.BulkResult;
+import com.mayoclone.dto.BulkStatusRequest;
 import com.mayoclone.dto.CreateDirectOrderRequest;
 import com.mayoclone.dto.InvoiceDto;
 import com.mayoclone.dto.OrderDto;
 import com.mayoclone.dto.OrderStatsDto;
 import com.mayoclone.dto.UpdateStatusRequest;
+import com.mayoclone.service.OrderBulkService;
 import com.mayoclone.service.OrderCommandService;
 import com.mayoclone.service.OrderService;
 import jakarta.validation.Valid;
@@ -33,10 +37,14 @@ public class OrderController {
 
     private final OrderService orderService;
     private final OrderCommandService orderCommandService;
+    private final OrderBulkService orderBulkService;
 
-    public OrderController(OrderService orderService, OrderCommandService orderCommandService) {
+    public OrderController(OrderService orderService,
+                          OrderCommandService orderCommandService,
+                          OrderBulkService orderBulkService) {
         this.orderService = orderService;
         this.orderCommandService = orderCommandService;
+        this.orderBulkService = orderBulkService;
     }
 
     /**
@@ -69,6 +77,18 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     public OrderDto createDirect(@Valid @RequestBody CreateDirectOrderRequest req) {
         return orderCommandService.createDirect(req);
+    }
+
+    /** Apply one status transition to many orders; per-id validation, partial success. */
+    @PostMapping("/bulk/status")
+    public BulkResult bulkStatus(@Valid @RequestBody BulkStatusRequest req) {
+        return orderBulkService.bulkStatus(req);
+    }
+
+    /** Assign one rider to many orders; per-id validation, partial success. */
+    @PostMapping("/bulk/assign")
+    public BulkResult bulkAssign(@Valid @RequestBody BulkAssignRequest req) {
+        return orderBulkService.bulkAssign(req);
     }
 
     @GetMapping("/{id}")

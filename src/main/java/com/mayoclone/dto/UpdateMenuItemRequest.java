@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 public record UpdateMenuItemRequest(
         @Size(max = 255) String name,
         @Size(max = 255) String category,
+        @Size(max = 1024) String imageUrl,
         @PositiveOrZero BigDecimal price,
         Boolean available
 ) {

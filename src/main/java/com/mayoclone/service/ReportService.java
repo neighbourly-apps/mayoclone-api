@@ -70,6 +70,11 @@ public class ReportService {
         Map<String, AggAcc> byAgg = new LinkedHashMap<>();
         Map<String, StationAcc> byStation = new LinkedHashMap<>();
         Map<LocalDate, DayAcc> byDay = new LinkedHashMap<>();
+        // 24 zero-filled hour buckets; bucketed on placedAt hour in the server zone.
+        HourAcc[] byHour = new HourAcc[24];
+        for (int h = 0; h < 24; h++) {
+            byHour[h] = new HourAcc(h);
+        }
         Map<String, TrainAcc> byTrain = new LinkedHashMap<>();
         Map<String, ItemAcc> byItem = new LinkedHashMap<>();
 
@@ -133,6 +138,14 @@ public class ReportService {
                 da.revenue = da.revenue.add(rev);
             }
 
+            // by hour (bucketed on placedAt hour, server zone; non-cancelled only)
+            if (!cancelled && o.getPlacedAt() != null) {
+                int hour = o.getPlacedAt().atZone(java.time.ZoneId.systemDefault()).getHour();
+                HourAcc ha = byHour[hour];
+                ha.orders++;
+                ha.revenue = ha.revenue.add(rev);
+            }
+
             // top items (non-cancelled only)
             if (!cancelled) {
                 for (OrderItem it : o.getItems()) {
@@ -179,6 +192,12 @@ public class ReportService {
                     da != null ? da.revenue : BigDecimal.ZERO));
         }
 
+        // byHour: 24 entries, zero-filled, hour 0..23 ascending
+        List<ReportSummaryDto.HourBucket> hourBuckets = new ArrayList<>(24);
+        for (HourAcc ha : byHour) {
+            hourBuckets.add(new ReportSummaryDto.HourBucket(ha.hour, ha.orders, ha.revenue));
+        }
+
         // topTrains: top 10 by order count
         List<ReportSummaryDto.TrainBucket> topTrains = byTrain.values().stream()
                 .sorted(Comparator.comparingLong((TrainAcc a) -> a.orders).reversed()
@@ -207,6 +226,7 @@ public class ReportService {
                 aggregatorBuckets,
                 stationBuckets,
                 dayBuckets,
+                hourBuckets,
                 topTrains,
                 topItems);
     }
@@ -244,6 +264,16 @@ public class ReportService {
 
         DayAcc(LocalDate date) {
             this.date = date;
+        }
+    }
+
+    private static final class HourAcc {
+        final int hour;
+        long orders;
+        BigDecimal revenue = BigDecimal.ZERO;
+
+        HourAcc(int hour) {
+            this.hour = hour;
         }
     }
 

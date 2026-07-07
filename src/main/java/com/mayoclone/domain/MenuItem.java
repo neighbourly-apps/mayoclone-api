@@ -36,6 +36,10 @@ public class MenuItem {
     @Column(nullable = true)
     private String category;
 
+    /** Optional image URL for the catalog item. */
+    @Column(name = "image_url", length = 1024)
+    private String imageUrl;
+
     @Column(nullable = false)
     private BigDecimal price;
 
@@ -77,6 +81,14 @@ public class MenuItem {
 
     public void setCategory(String category) {
         this.category = category;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public BigDecimal getPrice() {

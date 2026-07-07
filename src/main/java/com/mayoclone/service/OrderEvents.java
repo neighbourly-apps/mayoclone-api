@@ -20,9 +20,12 @@ public class OrderEvents {
     static final String DESTINATION = "/queue/orders";
 
     private final SimpMessagingTemplate template;
+    private final NotificationDispatcher notifications;
 
-    public OrderEvents(@Autowired(required = false) SimpMessagingTemplate template) {
+    public OrderEvents(@Autowired(required = false) SimpMessagingTemplate template,
+                       @Autowired(required = false) NotificationDispatcher notifications) {
         this.template = template;
+        this.notifications = notifications;
     }
 
     public void newOrder(Long accountId, OrderDto order) {
@@ -38,9 +41,15 @@ public class OrderEvents {
     }
 
     private void publish(Long accountId, String type, OrderDto order) {
-        if (template == null || accountId == null || order == null) {
+        if (accountId == null || order == null) {
             return;
         }
-        template.convertAndSendToUser(String.valueOf(accountId), DESTINATION, new OrderEvent(type, order));
+        if (template != null) {
+            template.convertAndSendToUser(String.valueOf(accountId), DESTINATION, new OrderEvent(type, order));
+        }
+        // Fan out to the configured outbound webhook (async + failure-tolerant; no-op if unconfigured).
+        if (notifications != null) {
+            notifications.dispatch(accountId, type, order);
+        }
     }
 }

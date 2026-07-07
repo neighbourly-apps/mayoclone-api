@@ -23,6 +23,7 @@ public record ReportSummaryDto(
         List<AggregatorBucket> byAggregator,
         List<StationBucket> byStation,
         List<DayBucket> byDay,
+        List<HourBucket> byHour,
         List<TrainBucket> topTrains,
         List<ItemBucket> topItems
 ) {
@@ -43,6 +44,10 @@ public record ReportSummaryDto(
     }
 
     public record DayBucket(LocalDate date, long orders, BigDecimal revenue) {
+    }
+
+    /** Order/revenue distribution across the 24 hours of the day (placedAt, server zone). */
+    public record HourBucket(int hour, long orders, BigDecimal revenue) {
     }
 
     public record TrainBucket(String trainNumber, String trainName, long orders) {

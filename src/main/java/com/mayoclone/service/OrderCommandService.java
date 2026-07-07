@@ -139,7 +139,16 @@ public class OrderCommandService {
         if (to == OrderStatus.DELIVERED) {
             o.setDeliveredAt(Instant.now());
         }
-        eventRepo.save(new OrderStatusEvent(o.getId(), to, Instant.now(), req.note()));
+        // Capture the cancellation reason on the order (and prefer it as the event
+        // note) when moving to CANCELLED.
+        String eventNote = req.note();
+        if (to == OrderStatus.CANCELLED && req.cancellationReason() != null) {
+            o.setCancellationReason(req.cancellationReason());
+            if (eventNote == null) {
+                eventNote = req.cancellationReason();
+            }
+        }
+        eventRepo.save(new OrderStatusEvent(o.getId(), to, Instant.now(), eventNote));
 
         IrctcOrder saved = orderRepo.save(o);
         OrderDto dto = mapper.toDto(saved);

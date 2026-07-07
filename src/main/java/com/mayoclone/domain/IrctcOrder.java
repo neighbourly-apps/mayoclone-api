@@ -112,6 +112,10 @@ public class IrctcOrder {
     private Instant assignedAt;
     private Instant deliveredAt;
 
+    /** Free-text reason captured when the order transitions to CANCELLED; null otherwise. */
+    @Column(name = "cancellation_reason", length = 500)
+    private String cancellationReason;
+
     @Column(length = 1000)
     private String subject;
 
@@ -330,6 +334,14 @@ public class IrctcOrder {
 
     public void setDeliveredAt(Instant deliveredAt) {
         this.deliveredAt = deliveredAt;
+    }
+
+    public String getCancellationReason() {
+        return cancellationReason;
+    }
+
+    public void setCancellationReason(String cancellationReason) {
+        this.cancellationReason = cancellationReason;
     }
 
     public String getSubject() {

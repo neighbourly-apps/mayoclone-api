@@ -10,6 +10,7 @@ public record MenuItemDto(
         Long id,
         String name,
         String category,
+        String imageUrl,
         BigDecimal price,
         boolean available,
         Instant createdAt
@@ -20,6 +21,7 @@ public record MenuItemDto(
                 m.getId(),
                 m.getName(),
                 m.getCategory(),
+                m.getImageUrl(),
                 m.getPrice(),
                 m.isAvailable(),
                 m.getCreatedAt()
