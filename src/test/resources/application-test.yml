@@ -38,3 +38,7 @@ mayoclone:
     # this value — it just must be present and stable.
     domain: inbound.mayoclone.test
     signing-secret: test-inbound-signing-secret-0123456789
+  mailgun:
+    # Deterministic Mailgun webhook signing key for tests. The Mailgun webhook test
+    # signs with the MailgunSignatureVerifier bean, so it just needs to be present.
+    signing-key: test-mailgun-signing-key-0123456789

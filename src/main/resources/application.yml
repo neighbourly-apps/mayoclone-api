@@ -76,6 +76,11 @@ mayoclone:
     # HMAC secret the inbound-email provider signs webhooks with.
     # DEV DEFAULT ONLY — prod MUST set MAYOCLONE_INBOUND_SIGNING_SECRET.
     signing-secret: ${MAYOCLONE_INBOUND_SIGNING_SECRET:dev-inbound-signing-secret-change-me}
+  mailgun:
+    # Mailgun's HTTP webhook signing key (Dashboard → Sending → Webhooks). Used to
+    # verify POST /api/inbound/mailgun. EMPTY BY DEFAULT → that endpoint is DISABLED
+    # and returns 503. Set MAYOCLONE_MAILGUN_SIGNING_KEY to enable the Mailgun path.
+    signing-key: ${MAYOCLONE_MAILGUN_SIGNING_KEY:}
 
 # Google OAuth (Gmail readonly ingestion). ABSENT by default → the Gmail feature
 # is disabled gracefully (endpoints return 503); the app still starts. Set all

@@ -1,0 +1,42 @@
+From: Comesum Care <care@comesum.com>
+To: platform-meals-ghi789@inbound.mayoclone.local
+Subject: Comesum Order CMS55512 Confirmed
+Message-ID: <cms-55512@comesum.com>
+Date: Thu, 09 Jul 2026 18:40:00 +0530
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="=_mayo_cms_1"
+
+--=_mayo_cms_1
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Comesum Order Confirmation
+
+Order ID: CMS55512
+PNR Number: 1122334455
+Train No. 12621 Tamil Nadu Express
+Coach: S4  Berth: 12
+Boarding: MAS
+Delivery Station: NGP Nagpur
+Passenger: Vijay Menon
+Contact: 9900112233
+Delivery: 2026-07-10
+Delivery Time: 20:00-20:30
+
+3 x Idli Sambar - ₹90
+1 x Tomato Soup - ₹70
+
+Total Amount: ₹250
+
+--=_mayo_cms_1
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<p>Order ID: CMS55512<br>PNR Number: 1122334455</p>
+<p>Train No. 12621 Tamil Nadu Express</p>
+<p>Delivery Station: NGP Nagpur</p>
+<p>Total Amount: &#8377;250</p>
+</body></html>
+
+--=_mayo_cms_1--

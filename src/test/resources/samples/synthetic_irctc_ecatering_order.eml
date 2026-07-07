@@ -1,0 +1,43 @@
+From: IRCTC eCatering <no-reply@ecatering.irctc.co.in>
+To: rail-bites-jkl012@inbound.mayoclone.local
+Subject: IRCTC eCatering Order ECAT7788990 Confirmed
+Message-ID: <ecat-7788990@ecatering.irctc.co.in>
+Date: Fri, 10 Jul 2026 09:12:00 +0530
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="=_mayo_ecat_1"
+
+--=_mayo_ecat_1
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+IRCTC eCatering - Order Confirmed
+
+Order Number: ECAT7788990
+PNR: 5566778899
+Train No.: 12009 Shatabdi Express
+Coach: C5  Berth No: 44
+Boarding Station: ADI
+Delivery Station: RTM Ratlam Junction
+Passenger Name: Meera Nair
+Mobile: 9871200034
+Delivery Date: 11 Jul 2026
+Delivery Slot: 12:30 - 13:00
+
+2 x Thali (Veg) - ₹150
+1 x Curd - ₹30
+1 x Water Bottle - ₹20
+
+Payable: ₹350
+
+--=_mayo_ecat_1
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<p>Order Number: ECAT7788990<br>PNR: 5566778899</p>
+<p>Train No.: 12009 Shatabdi Express</p>
+<p>Delivery Station: RTM Ratlam Junction</p>
+<p>Payable: &#8377;350</p>
+</body></html>
+
+--=_mayo_ecat_1--

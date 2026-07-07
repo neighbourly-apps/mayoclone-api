@@ -1,0 +1,52 @@
+From: Zoop Orders <orders@zoopindia.com>
+To: veg-corner-abc123@inbound.mayoclone.local
+Subject: Your Zoop order ZOOP100245 is confirmed
+Message-ID: <zoop-100245@zoopindia.com>
+Date: Tue, 07 Jul 2026 08:15:00 +0530
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="=_mayo_zoop_1"
+
+--=_mayo_zoop_1
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Dear Rajesh Kumar,
+
+Thank you for ordering with Zoop. Your IRCTC e-catering order is confirmed.
+
+Booking ID: ZOOP100245
+PNR No.: 4512367890
+Train No.: 12951 Mumbai Rajdhani Express
+Coach: B3   Berth: 32
+Boarding: BCT
+Delivery Station: NDLS New Delhi
+Passenger: Rajesh Kumar
+Phone: 9876543210
+Delivery Date: 2026-07-08
+Delivery Time: 13:00-13:30
+
+Your items:
+2 x Veg Biryani - ₹180
+1 x Masala Dosa - ₹120
+1 x Filter Coffee - Rs. 40
+
+Total: ₹520
+Payment: Prepaid (Paid online)
+
+Team Zoop
+
+--=_mayo_zoop_1
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<h2>Order Confirmed</h2>
+<p>Dear Rajesh Kumar, your Zoop e-catering order is confirmed.</p>
+<p>Booking ID: ZOOP100245<br>PNR No.: 4512367890<br>
+Train No.: 12951 Mumbai Rajdhani Express</p>
+<p>Delivery Station: NDLS New Delhi</p>
+<p>2 x Veg Biryani - &#8377;180<br>1 x Masala Dosa - &#8377;120</p>
+<p><b>Total: &#8377;520</b></p>
+</body></html>
+
+--=_mayo_zoop_1--

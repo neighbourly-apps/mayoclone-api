@@ -1,0 +1,43 @@
+From: RailRestro <orders@railrestro.com>
+To: spice-junction-def456@inbound.mayoclone.local
+Subject: RailRestro Order Confirmation RR-889231
+Message-ID: <rr-889231@railrestro.com>
+Date: Wed, 08 Jul 2026 10:02:00 +0530
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="=_mayo_rr_1"
+
+--=_mayo_rr_1
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Order Confirmation - RailRestro
+
+Order No: RR-889231
+PNR: 8890011223
+Train Number: 22221 Rajdhani Express
+Coach: A1  Berth: 5
+Boarding Station: NDLS
+Delivery Station: BPL Bhopal Junction
+Passenger Name - Anita Sharma
+Mobile: 9812345678
+Delivery Date: 09/07/2026
+Delivery Slot: 19:00 - 19:30
+
+1 x Chicken Curry Meal - Rs. 220
+2 x Roti - Rs. 20
+1 x Gulab Jamun - ₹60
+
+Grand Total: Rs. 320
+
+--=_mayo_rr_1
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+<html><body>
+<p>Order No: RR-889231<br>PNR: 8890011223</p>
+<p>Train Number: 22221 Rajdhani Express</p>
+<p>Delivery Station: BPL Bhopal Junction</p>
+<p>Grand Total: Rs. 320</p>
+</body></html>
+
+--=_mayo_rr_1--

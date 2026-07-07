@@ -68,15 +68,40 @@ Canonical keys (Mailgun-style aliases in parentheses are also accepted):
 5. Create the vendor as `FORWARDING`; give the vendor its `ingestAddress` and a
    forwarding rule to set up in their mailbox.
 
-#### Mailgun (Routes → inbound parse)
+#### Mailgun — NATIVE adapter (recommended): `POST /api/inbound/mailgun`
 
-- Add & verify the receiving domain; Mailgun sets the MX records for you.
-- Create a Route: match recipient `.*@inbound.mayoclone.example`, action
-  `forward("https://<api-host>/api/inbound/email")`.
-- Enable webhook signing and set the signing key to
-  `MAYOCLONE_INBOUND_SIGNING_SECRET`. (If your Mailgun plan signs with its own
-  scheme, put a thin adapter in front that re-signs to the `X-Mayo-Signature`
-  format, or use SendGrid.)
+There's a **first-class Mailgun endpoint** that accepts Mailgun's own POST format
+and verifies Mailgun's own signature — no re-signing shim needed.
+
+- **Format**: Mailgun Routes POST the parsed message as
+  `application/x-www-form-urlencoded` (or `multipart/form-data`). Fields consumed:
+  `recipient`, `sender`/`from`, `subject`, `body-plain` → `stripped-text` →
+  `body-html` (first non-blank wins; html is stripped to text), `Message-Id`, plus
+  the signature triplet `timestamp`, `token`, `signature`.
+- **Signature**: `signature = hexHMAC_SHA256(key = MAYOCLONE_MAILGUN_SIGNING_KEY,
+  message = timestamp + token)`, constant-time compared. Freshness window ±15 min;
+  a bounded in-memory recently-seen-`token` set blocks replay inside that window.
+- **Status codes**:
+  - **503** — `MAYOCLONE_MAILGUN_SIGNING_KEY` unset (feature disabled).
+  - **401** — bad/missing signature, stale timestamp, or token replay.
+  - **200** `{status:accepted,newOrders}` — signature ok AND recipient matched a
+    FORWARDING vendor → processed (idempotent on `Message-Id`).
+  - **200** `{status:ignored}` — signature ok but recipient unknown (no detail
+    leaked; a 200 also stops Mailgun retrying). Nothing stored.
+  - **406** — permanently unprocessable (e.g. no `recipient` at all) so Mailgun
+    STOPS retrying.
+
+Setup:
+
+1. Add & verify the receiving domain in Mailgun; it sets the MX records for you.
+2. Create a Route: match recipient `.*@inbound.mayoclone.example`, action
+   `forward("https://<api-host>/api/inbound/mailgun")` (or `store(notify=...)`).
+3. Copy Mailgun's **HTTP webhook signing key** (Dashboard → Sending → Webhooks)
+   into `MAYOCLONE_MAILGUN_SIGNING_KEY`. That's the whole config — the adapter
+   verifies Mailgun's signature natively.
+
+> The generic `POST /api/inbound/email` (JSON + `X-Mayo-Signature`) still exists
+> for providers that let you sign in our scheme (or a re-signing relay).
 
 #### SendGrid (Inbound Parse)
 
@@ -177,6 +202,61 @@ app password (or use their provider's equivalent).
 - Mitigations: encryption at rest, TLS + identity check, app-password requirement.
 - Residual: `MAYOCLONE_ENC_KEY` compromise ⇒ decryptable creds; a broad app
   password may grant more than read access depending on the provider.
+
+---
+
+## Parser tuning
+
+Aggregators change their email formats without notice. Two tools help you tune the
+regex parsers (`GenericIrctcEmailParser` + aggregator-specific parsers) against
+real mail **without touching the database**:
+
+### `POST /api/dev/parse-preview` (AUTHENTICATED, non-persisting)
+
+A dry run of the exact route + parse the pipeline uses. Send either discrete fields
+or a full raw RFC822 email:
+
+```json
+{ "from": "orders@zoopindia.com", "subject": "…", "body": "PNR: …", "raw": "<full .eml>" }
+```
+
+`raw` (a complete RFC822 email) is run through the MIME utility first to derive
+from/subject/body. Response:
+
+```json
+{
+  "matchedAggregator": { "code": "ZOOP", "name": "Zoop" },
+  "parsed": {
+    "externalOrderId": "ZOOP100245", "pnr": "4512367890",
+    "trainNumber": "12951", "trainName": "Mumbai Rajdhani Express",
+    "coach": "B3", "berth": "32", "boardingStationCode": "BCT",
+    "deliveryStationCode": "NDLS", "deliveryStationName": "New Delhi",
+    "passengerName": "Rajesh Kumar", "passengerPhone": "9876543210",
+    "deliveryDate": "2026-07-08", "deliverySlot": "13:00-13:30",
+    "amount": 520, "currency": "INR", "status": "CONFIRMED",
+    "items": [ { "name": "Veg Biryani", "qty": 2, "price": 180 } ]
+  },
+  "wouldPersist": true,
+  "warnings": [ "no line items parsed", "amount not found (or zero)" ]
+}
+```
+
+`wouldPersist` is true iff an aggregator matched AND a parser produced an order.
+Null fields are shown as `null`; `warnings` flags anything missing or defaulted.
+Nothing is written to the DB, so it's safe to fire at production emails.
+
+### `.eml` sample harness — `src/test/resources/samples/`
+
+Drop a real aggregator `.eml` (mail client → "Show original" / "Download message")
+into that folder and run:
+
+```
+./gradlew test --tests com.mayoclone.ingest.EmlSampleParsingTest
+```
+
+For **every** `.eml` it logs a concise parse report (matched aggregator + extracted
+fields + warnings). Built-in `synthetic_*.eml` samples are hard-asserted; real
+drop-ins are reported but never fail CI. See the folder's `README.md`.
 
 ---
 
