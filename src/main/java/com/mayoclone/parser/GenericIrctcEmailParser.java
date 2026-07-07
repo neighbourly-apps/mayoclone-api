@@ -63,14 +63,25 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             "Delivery\\s*Station\\s*(?:Code)?\\s*[:#-]?\\s*([A-Z]{2,5})\\b\\s*([^\\r\\n]*)",
             Pattern.CASE_INSENSITIVE);
 
-    // "Passenger: Rajesh Kumar" / "Passenger Name - Rajesh Kumar"
+    // "Passenger: Rajesh Kumar" / "Passenger Name - Rajesh Kumar" /
+    // "Passenger: Anita Rao 9812345678" (name terminates at a trailing phone, comma,
+    // slash, pipe, newline or a Phone/Mobile/Contact label — not just newline).
     protected static final Pattern PASSENGER = Pattern.compile(
-            "Passenger\\s*(?:Name)?\\s*[:#-]\\s*([A-Za-z][A-Za-z .]+?)\\s*(?:\\r?\\n|Phone|Mobile|$)",
+            "Passenger\\s*(?:Name)?\\s*[:#-]\\s*([A-Za-z][A-Za-z. ]*?[A-Za-z])"
+                    + "\\s*(?=\\d|\\+|Phone|Mobile|Contact|Email|\\r|\\n|,|/|\\||$)",
             Pattern.CASE_INSENSITIVE);
 
-    // "Phone: 9876543210" / "Mobile: ..." / "Contact: ..."
+    // "Phone: 9876543210" / "Mobile: +91 98765 43210" / "Contact: 91-9876543210".
+    // Captures a phone-ish run of digits/spaces/hyphens on ONE line (no newline in
+    // the class), normalized to the last 10 digits in extractPhone().
     protected static final Pattern PHONE = Pattern.compile(
-            "(?:Phone|Mobile|Contact)\\s*(?:No\\.?)?\\s*[:#-]?\\s*(\\d{10})",
+            "(?:Phone|Mobile|Contact|Ph)\\s*(?:No\\.?)?\\s*[:#-]?\\s*(\\+?\\d[\\d -]{8,14})",
+            Pattern.CASE_INSENSITIVE);
+
+    // Fallback: a phone trailing the passenger name on the same line,
+    // e.g. "Passenger: Anita Rao 9812345678" (no explicit Phone label).
+    protected static final Pattern PASSENGER_PHONE = Pattern.compile(
+            "Passenger\\s*(?:Name)?\\s*[:#-]\\s*[A-Za-z][A-Za-z. ]*?[A-Za-z]\\s+(\\+?\\d[\\d -]{8,14})",
             Pattern.CASE_INSENSITIVE);
 
     // "Delivery Date: 2026-07-08" / "Delivery: 2026-07-08 19:30" / "08/07/2026" / "08 Jul 2026".
@@ -86,14 +97,29 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
                     + "(\\d{1,2}:\\d{2}(?:\\s*[-–]\\s*\\d{1,2}:\\d{2})?)",
             Pattern.CASE_INSENSITIVE);
 
-    // "Total: ₹450", "Rs. 320", "INR 450"
+    // A "total"-qualified amount, preferred over any bare currency value. The
+    // currency symbol is optional here ("Grand Total: 450"). Matched last-wins so
+    // a "Grand Total" after a "Total" (subtotal) is preferred.
+    protected static final Pattern TOTAL = Pattern.compile(
+            "(?:grand\\s*total|total\\s*(?:amount|payable)?|amount\\s*payable|net\\s*payable"
+                    + "|order\\s*total|payable\\s*amount)\\s*[:#-]?\\s*"
+                    + "(?:₹|Rs\\.?|INR)?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
+            Pattern.CASE_INSENSITIVE);
+
+    // "Total: ₹450", "Rs. 320", "INR 450" — any currency value (fallback for amount).
     protected static final Pattern AMOUNT = Pattern.compile(
             "(?:grand\\s*total|total|amount|payable)?\\s*(?:₹|Rs\\.?|INR)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)",
             Pattern.CASE_INSENSITIVE);
 
-    // "2 x Veg Biryani - ₹180" / "1 X Filter Coffee – Rs. 40"
+    // qty-first: "2 x Veg Biryani - ₹180" / "1 X Filter Coffee – Rs. 40" /
+    // "2 x Veg Biryani ₹180" (separator optional) / "2 × Idli @ Rs 40".
     protected static final Pattern LINE_ITEM = Pattern.compile(
-            "(\\d+)\\s*[xX*]\\s*(.+?)\\s*[-–:]\\s*(?:₹|Rs\\.?|INR)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)");
+            "(\\d+)\\s*[xX*×]\\s*(.+?)\\s*[-–:@=]?\\s*(?:₹|Rs\\.?|INR)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)");
+
+    // name-first fallback: "Veg Biryani x 2 - ₹180" / "Masala Dosa ×1 Rs.90".
+    protected static final Pattern LINE_ITEM_ALT = Pattern.compile(
+            "([A-Za-z][A-Za-z0-9 .()&'-]*?)\\s*[xX×]\\s*(\\d+)\\s*[-–:@=]?\\s*"
+                    + "(?:₹|Rs\\.?|INR)\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)");
 
     private static final DateTimeFormatter[] DATE_FORMATS = {
             DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH),
@@ -126,7 +152,7 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
                 extractGroup(DELIVERY_STATION, safeBody, null),
                 extractDeliveryStationName(safeBody),
                 extractPassenger(safeBody),
-                extractGroup(PHONE, safeBody, null),
+                extractPhone(safeBody),
                 extractDeliveryDate(safeBody),
                 extractGroup(DELIVERY_SLOT, safeBody, null),
                 extractAmount(safeBody),
@@ -178,6 +204,28 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         return m.find() ? m.group(1).trim() : "Unknown";
     }
 
+    /** Labeled phone first; else a mobile trailing the passenger name on its line. */
+    protected String extractPhone(String body) {
+        Matcher m = PHONE.matcher(body);
+        if (m.find()) {
+            return normalizePhone(m.group(1));
+        }
+        Matcher pm = PASSENGER_PHONE.matcher(body);
+        return pm.find() ? normalizePhone(pm.group(1)) : null;
+    }
+
+    /** Reduce a captured phone token to its last 10 digits (drops +91/spaces/hyphens). */
+    private static String normalizePhone(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.length() >= 10) {
+            return digits.substring(digits.length() - 10);
+        }
+        return digits.isEmpty() ? null : digits;
+    }
+
     protected LocalDate extractDeliveryDate(String body) {
         Matcher m = DELIVERY_DATE.matcher(body);
         if (!m.find()) {
@@ -195,7 +243,17 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     }
 
     protected BigDecimal extractAmount(String body) {
-        // Prefer a "total"/"amount"-qualified match; else fall back to the largest currency value.
+        // Prefer an explicit total ("Grand Total", "Amount Payable", …) — last match
+        // wins so a grand total after a subtotal is chosen.
+        Matcher t = TOTAL.matcher(body);
+        BigDecimal total = null;
+        while (t.find()) {
+            total = parseMoney(t.group(1));
+        }
+        if (total != null) {
+            return total;
+        }
+        // Fallback: the largest bare currency value in the body.
         Matcher m = AMOUNT.matcher(body);
         BigDecimal best = null;
         while (m.find()) {
@@ -215,6 +273,16 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             String name = m.group(2).trim();
             BigDecimal price = parseMoney(m.group(3));
             items.add(new OrderItem(name, qty, price));
+        }
+        if (items.isEmpty()) {
+            // Fall back to the name-first layout ("Veg Biryani x 2 - ₹180").
+            Matcher a = LINE_ITEM_ALT.matcher(body);
+            while (a.find()) {
+                String name = a.group(1).trim();
+                int qty = Integer.parseInt(a.group(2));
+                BigDecimal price = parseMoney(a.group(3));
+                items.add(new OrderItem(name, qty, price));
+            }
         }
         return items;
     }

@@ -94,6 +94,47 @@ class GenericIrctcEmailParserTest {
     }
 
     @Test
+    void parsesPassengerNameAndPhoneWhenPhoneTrailsTheNameOnSameLine() {
+        // "Passenger: <Name> <phone>" — the phone must not swallow the name, and the
+        // unlabeled phone should still be captured. (Regression: previously "Unknown".)
+        String body = """
+                Order ID: ZP123
+                PNR: 4455667788
+                Train No.: 12951 Mumbai Rajdhani
+                Delivery Station: BPL Bhopal
+                Passenger: Anita Rao 9812345678
+                2 x Veg Thali - Rs.180
+                Total: Rs.360
+                """;
+        ParsedOrder p = parser.parse(agg("ZOOP"), "orders@zoopindia.com", "Zoop order", body, "<zp123@zoop>");
+        assertEquals("Anita Rao", p.passengerName());
+        assertEquals("9812345678", p.passengerPhone());
+    }
+
+    @Test
+    void parsesNameFirstLineItemsAndTotalQualifiedAmount() {
+        String body = """
+                Order No: RR77
+                PNR: 1122334455
+                Train Number: 12002 Shatabdi
+                Delivery Station: GWL Gwalior
+                Passenger: Vikram Singh
+                Mobile: +91 98765 43210
+                Veg Biryani x 2 - Rs.180
+                Masala Dosa x1 Rs.90
+                Sub Total: Rs. 270
+                Grand Total: Rs. 300
+                """;
+        ParsedOrder p = parser.parse(agg("RAILRESTRO"), "orders@railrestro.com", "order", body, "<rr77@rr>");
+        assertEquals("9876543210", p.passengerPhone());
+        assertEquals(2, p.items().size());
+        assertEquals("Veg Biryani", p.items().get(0).getName());
+        assertEquals(2, p.items().get(0).getQty());
+        // Grand Total (300) preferred over the sub total (270).
+        assertEquals(0, new BigDecimal("300").compareTo(p.amount()));
+    }
+
+    @Test
     void parsesDeliveryDateWithoutTheDateLabel() {
         // "Delivery: <date> <time>" — the date without an explicit "Date" label,
         // as seen in the wild. Must still extract the delivery date so the order
