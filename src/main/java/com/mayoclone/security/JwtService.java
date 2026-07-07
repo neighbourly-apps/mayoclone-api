@@ -22,14 +22,19 @@ import java.util.Date;
 @Service
 public class JwtService {
 
+    /** Purpose claim for the short-lived token minted after email OTP verification. */
+    public static final String PURPOSE_EMAIL_VERIFY = "email_verify";
+
     private final SecretKey key;
     private final String issuer;
     private final long accessTtlSeconds;
+    private final long emailVerifyTtlSeconds;
 
     public JwtService(
             @Value("${mayoclone.jwt.secret}") String secret,
             @Value("${mayoclone.jwt.issuer:mayoclone}") String issuer,
-            @Value("${mayoclone.jwt.access-ttl-seconds:900}") long accessTtlSeconds) {
+            @Value("${mayoclone.jwt.access-ttl-seconds:900}") long accessTtlSeconds,
+            @Value("${mayoclone.auth.email-verify-ttl-seconds:900}") long emailVerifyTtlSeconds) {
         byte[] bytes = secret.getBytes(StandardCharsets.UTF_8);
         if (bytes.length < 32) {
             throw new IllegalStateException(
@@ -38,6 +43,7 @@ public class JwtService {
         this.key = Keys.hmacShaKeyFor(bytes);
         this.issuer = issuer;
         this.accessTtlSeconds = accessTtlSeconds;
+        this.emailVerifyTtlSeconds = emailVerifyTtlSeconds;
     }
 
     public long accessTtlSeconds() {
@@ -56,6 +62,46 @@ public class JwtService {
                 .expiration(Date.from(now.plusSeconds(accessTtlSeconds)))
                 .signWith(key)
                 .compact();
+    }
+
+    /**
+     * Mint a short-lived (default 15 min) token proving control of {@code email}.
+     * Claims: {@code sub}=email (lower-cased), {@code purpose=email_verify}.
+     */
+    public String issueEmailVerifyToken(String email) {
+        Instant now = Instant.now();
+        return Jwts.builder()
+                .issuer(issuer)
+                .subject(email == null ? null : email.trim().toLowerCase())
+                .claim("purpose", PURPOSE_EMAIL_VERIFY)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plusSeconds(emailVerifyTtlSeconds)))
+                .signWith(key)
+                .compact();
+    }
+
+    /**
+     * Verify an {@code email_verify} token and return the verified email (its
+     * {@code sub}), or {@code null} if missing/invalid/expired/wrong-purpose.
+     */
+    public String parseEmailVerifiedEmail(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(key)
+                    .requireIssuer(issuer)
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            if (!PURPOSE_EMAIL_VERIFY.equals(claims.get("purpose", String.class))) {
+                return null;
+            }
+            return claims.getSubject();
+        } catch (JwtException | IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**

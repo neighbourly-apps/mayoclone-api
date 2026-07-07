@@ -16,6 +16,7 @@ public record AccountDto(
         String gstin,
         String addressLine,
         String phone,
+        boolean emailVerified,
         Instant createdAt
 ) {
 
@@ -31,6 +32,7 @@ public record AccountDto(
                 a.getGstin(),
                 a.getAddressLine(),
                 a.getPhone(),
+                a.isEmailVerified(),
                 a.getCreatedAt()
         );
     }

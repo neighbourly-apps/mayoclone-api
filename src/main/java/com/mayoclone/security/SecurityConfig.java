@@ -94,7 +94,8 @@ public class SecurityConfig {
                         // --- Public ---
                         .requestMatchers(HttpMethod.POST,
                                 "/api/auth/register", "/api/auth/login",
-                                "/api/auth/refresh", "/api/auth/logout").permitAll()
+                                "/api/auth/refresh", "/api/auth/logout",
+                                "/api/auth/otp/send", "/api/auth/otp/verify").permitAll()
                         .requestMatchers("/api/inbound/**").permitAll()
                         .requestMatchers("/api/demo/**").permitAll()
                         // STOMP/SockJS handshake is public; the CONNECT frame is JWT-authed

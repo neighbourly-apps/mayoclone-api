@@ -13,6 +13,9 @@ public record RegisterRequest(
         String stationName,
         String gstin,
         String addressLine,
-        String phone
+        String phone,
+        // Optional JWT from POST /api/auth/otp/verify. REQUIRED only when
+        // mayoclone.auth.require-email-otp=true; ignored/optional otherwise.
+        String emailVerificationToken
 ) {
 }

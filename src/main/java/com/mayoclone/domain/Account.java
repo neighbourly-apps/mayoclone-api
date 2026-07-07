@@ -66,6 +66,10 @@ public class Account {
     @Column(nullable = false)
     private String status = STATUS_ACTIVE;
 
+    /** True once the owner has proven control of their email via an OTP. */
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -158,6 +162,14 @@ public class Account {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public boolean isEmailVerified() {
+        return emailVerified;
+    }
+
+    public void setEmailVerified(boolean emailVerified) {
+        this.emailVerified = emailVerified;
     }
 
     public Instant getCreatedAt() {

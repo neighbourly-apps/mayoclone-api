@@ -12,7 +12,7 @@ class JwtServiceTest {
     private static final String SECRET = "unit-test-jwt-secret-that-is-definitely-32-plus-bytes";
 
     private JwtService service() {
-        return new JwtService(SECRET, "mayoclone-test", 900);
+        return new JwtService(SECRET, "mayoclone-test", 900, 900);
     }
 
     @Test
@@ -38,10 +38,10 @@ class JwtServiceTest {
 
     @Test
     void rejectsTokenSignedWithADifferentSecret() {
-        String token = new JwtService(SECRET, "mayoclone-test", 900)
+        String token = new JwtService(SECRET, "mayoclone-test", 900, 900)
                 .issueAccessToken(1L, "a@b.c", "OWNER");
         JwtService other = new JwtService(
-                "a-totally-different-secret-key-also-32-plus-bytes-long", "mayoclone-test", 900);
+                "a-totally-different-secret-key-also-32-plus-bytes-long", "mayoclone-test", 900, 900);
         assertNull(other.parse(token));
     }
 
@@ -53,8 +53,23 @@ class JwtServiceTest {
     }
 
     @Test
+    void emailVerifyTokenRoundTripReturnsLowercasedEmail() {
+        JwtService jwt = service();
+        String token = jwt.issueEmailVerifyToken("Owner@Biz.Test");
+        assertEquals("owner@biz.test", jwt.parseEmailVerifiedEmail(token));
+    }
+
+    @Test
+    void anAccessTokenIsNotAcceptedAsAnEmailVerifyToken() {
+        JwtService jwt = service();
+        String access = jwt.issueAccessToken(1L, "a@b.c", "OWNER");
+        // Wrong purpose (no email_verify claim) → null.
+        assertNull(jwt.parseEmailVerifiedEmail(access));
+    }
+
+    @Test
     void shortSecretIsRejected() {
         assertThrows(IllegalStateException.class,
-                () -> new JwtService("too-short", "mayoclone", 900));
+                () -> new JwtService("too-short", "mayoclone", 900, 900));
     }
 }

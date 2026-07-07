@@ -16,6 +16,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
 import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
@@ -36,6 +37,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuditService auditService;
     private final AppMetrics metrics;
+    private final boolean requireEmailOtp;
 
     /** A throwaway hash so login timing is similar whether or not the email exists. */
     private final String dummyHash;
@@ -45,13 +47,16 @@ public class AuthService {
                        JwtService jwtService,
                        RefreshTokenService refreshTokenService,
                        AuditService auditService,
-                       AppMetrics metrics) {
+                       AppMetrics metrics,
+                       @org.springframework.beans.factory.annotation.Value(
+                               "${mayoclone.auth.require-email-otp:false}") boolean requireEmailOtp) {
         this.accountRepo = accountRepo;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.auditService = auditService;
         this.metrics = metrics;
+        this.requireEmailOtp = requireEmailOtp;
         this.dummyHash = passwordEncoder.encode("timing-equalizer-" + RANDOM.nextLong());
     }
 
@@ -66,6 +71,19 @@ public class AuthService {
     @Transactional
     public AuthResult register(RegisterRequest req) {
         String email = req.email().trim().toLowerCase();
+
+        // Email-OTP gate (config-gated). When required, a valid email_verify JWT
+        // whose subject matches the registration email must be supplied. When not
+        // required, any supplied+valid token still flips emailVerified to true.
+        boolean emailVerified = false;
+        String tokenEmail = jwtService.parseEmailVerifiedEmail(req.emailVerificationToken());
+        if (tokenEmail != null && tokenEmail.equalsIgnoreCase(email)) {
+            emailVerified = true;
+        }
+        if (requireEmailOtp && !emailVerified) {
+            throw new ResponseStatusException(BAD_REQUEST, "email_not_verified");
+        }
+
         if (accountRepo.existsByEmailIgnoreCase(email)) {
             throw new ResponseStatusException(CONFLICT, "Email already registered");
         }
@@ -80,6 +98,7 @@ public class AuthService {
         a.setPhone(blankToNull(req.phone()));
         a.setRole(Account.ROLE_OWNER);
         a.setStatus(Account.STATUS_ACTIVE);
+        a.setEmailVerified(emailVerified);
         a.setCreatedAt(Instant.now());
         a = accountRepo.save(a);
 

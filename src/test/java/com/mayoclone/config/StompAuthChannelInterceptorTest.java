@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class StompAuthChannelInterceptorTest {
 
     private final JwtService jwt = new JwtService(
-            "test-only-jwt-secret-value-that-is-long-enough-0123456789", "mayoclone-test", 900);
+            "test-only-jwt-secret-value-that-is-long-enough-0123456789", "mayoclone-test", 900, 900);
     private final StompAuthChannelInterceptor interceptor = new StompAuthChannelInterceptor(jwt);
 
     private Message<byte[]> connect(String authHeader) {

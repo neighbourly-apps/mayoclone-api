@@ -65,6 +65,21 @@ mayoclone:
     issuer: ${MAYOCLONE_JWT_ISSUER:mayoclone}
     access-ttl-seconds: ${MAYOCLONE_JWT_ACCESS_TTL:900}        # 15 minutes
     refresh-ttl-seconds: ${MAYOCLONE_JWT_REFRESH_TTL:604800}   # 7 days
+  auth:
+    # Email OTP verification for onboarding.
+    #  require-email-otp: when TRUE, POST /api/auth/register REQUIRES a valid
+    #    emailVerificationToken (the JWT from /api/auth/otp/verify). Default false
+    #    so register works tokenless (dev/tests unchanged).
+    #  otp-dev-mode: when TRUE, POST /api/auth/otp/send ALSO returns the plaintext
+    #    "devCode" so a local UI can display it without SMTP. MUST be false in prod.
+    #  otp-ttl-seconds: OTP validity window (default 10 minutes).
+    #  email-verify-ttl-seconds: TTL of the email_verify JWT minted on verify (15 min).
+    require-email-otp: ${MAYOCLONE_REQUIRE_EMAIL_OTP:false}
+    otp-dev-mode: ${MAYOCLONE_OTP_DEV_MODE:true}
+    otp-ttl-seconds: ${MAYOCLONE_OTP_TTL:600}
+    email-verify-ttl-seconds: ${MAYOCLONE_EMAIL_VERIFY_TTL:900}
+    # From-address for OTP emails (only used when real SMTP is configured).
+    otp-from: ${MAYOCLONE_OTP_FROM:no-reply@mayoclone.local}
   enc:
     # base64-encoded 32 bytes (AES-256). Empty => documented dev default in the converter.
     # Prod MUST set MAYOCLONE_ENC_KEY. NEVER commit a real key.
