@@ -52,7 +52,7 @@ class CsvExportIntegrationTest extends AbstractIntegrationTest {
         o.setAggregator(agg);
         o.setOrderType(agg != null ? OrderType.ONLINE : OrderType.DIRECT);
         o.setPaymentMode(PaymentMode.PREPAID);
-        o.setStatus(OrderStatus.DELIVERED);
+        o.setStatus(OrderStatus.BILL_PENDING);
         o.setAmount(new BigDecimal(amount));
         o.setDeliveryDate(D);
         o.setPlacedAt(Instant.parse("2026-06-02T09:00:00Z"));
@@ -101,7 +101,9 @@ class CsvExportIntegrationTest extends AbstractIntegrationTest {
 
         String body = res.getResponse().getContentAsString();
         assertTrue(body.startsWith("date,orders,revenue"), "header row present: " + body);
-        // 3 days in window -> 3 data rows + header
+        // CSV omits empty days: only the seeded 2026-06-02 appears (06-01 / 06-03 dropped).
         assertTrue(body.contains("2026-06-02,1,250"), "the seeded day row present: " + body);
+        assertTrue(!body.contains("2026-06-01") && !body.contains("2026-06-03"),
+                "empty days omitted from CSV: " + body);
     }
 }

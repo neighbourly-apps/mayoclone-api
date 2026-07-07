@@ -10,38 +10,33 @@ import java.util.Set;
  * <p>Allowed forward transitions:
  * <pre>
  *   NEW              -> ACCEPTED, CANCELLED
- *   ACCEPTED         -> PREPARING, CANCELLED
- *   PREPARING        -> READY,     CANCELLED
- *   READY            -> OUT_FOR_DELIVERY, CANCELLED
- *   OUT_FOR_DELIVERY -> DELIVERED, UNDELIVERED, CANCELLED
- *   DELIVERED / UNDELIVERED / CANCELLED -> (terminal)
+ *   ACCEPTED         -> OUT_FOR_DELIVERY, CANCELLED
+ *   OUT_FOR_DELIVERY -> BILL_PENDING, CANCELLED
+ *   BILL_PENDING     -> (terminal)
+ *   CANCELLED        -> (terminal)
  * </pre>
  * In short: follow the chain forward, and any non-terminal state may be CANCELLED.
+ * BILL_PENDING is the "delivered, bill pending" point — {@code deliveredAt} is
+ * stamped on entry to it.
  */
 public enum OrderStatus {
     NEW,
     ACCEPTED,
-    PREPARING,
-    READY,
     OUT_FOR_DELIVERY,
-    DELIVERED,
-    UNDELIVERED,
+    BILL_PENDING,
     CANCELLED;
 
     /** Forward (non-cancel) transitions. CANCELLED is handled by the any-non-terminal rule. */
     private static final Map<OrderStatus, Set<OrderStatus>> FORWARD = Map.of(
             NEW, EnumSet.of(ACCEPTED),
-            ACCEPTED, EnumSet.of(PREPARING),
-            PREPARING, EnumSet.of(READY),
-            READY, EnumSet.of(OUT_FOR_DELIVERY),
-            OUT_FOR_DELIVERY, EnumSet.of(DELIVERED, UNDELIVERED),
-            DELIVERED, EnumSet.noneOf(OrderStatus.class),
-            UNDELIVERED, EnumSet.noneOf(OrderStatus.class),
+            ACCEPTED, EnumSet.of(OUT_FOR_DELIVERY),
+            OUT_FOR_DELIVERY, EnumSet.of(BILL_PENDING),
+            BILL_PENDING, EnumSet.noneOf(OrderStatus.class),
             CANCELLED, EnumSet.noneOf(OrderStatus.class));
 
-    /** DELIVERED / UNDELIVERED / CANCELLED are end states — no further transitions. */
+    /** BILL_PENDING / CANCELLED are end states — no further transitions. */
     public boolean isTerminal() {
-        return this == DELIVERED || this == UNDELIVERED || this == CANCELLED;
+        return this == BILL_PENDING || this == CANCELLED;
     }
 
     /** True if a move from {@code this} to {@code target} is a legal lifecycle transition. */

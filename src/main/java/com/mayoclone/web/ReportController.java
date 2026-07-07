@@ -49,6 +49,10 @@ public class ReportController {
         StringBuilder csv = new StringBuilder();
         csv.append(Csv.row(List.of("date", "orders", "revenue")));
         for (ReportSummaryDto.DayBucket d : s.byDay()) {
+            // Omit fully-empty days from the CSV (JSON keeps them zero-filled for charts).
+            if (d.orders() == 0 && d.revenue().signum() == 0) {
+                continue;
+            }
             csv.append(Csv.row(java.util.Arrays.asList(d.date(), d.orders(), d.revenue())));
         }
         return ResponseEntity.ok()

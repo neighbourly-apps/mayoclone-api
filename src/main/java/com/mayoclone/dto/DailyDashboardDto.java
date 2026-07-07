@@ -13,7 +13,8 @@ import java.util.Map;
  * @param online       PREPAID bucket (count + revenue)
  * @param cod          COD bucket (count + revenue)
  * @param byStatus     count per {@code OrderStatus} name (every status present, 0 when none)
- * @param undelivered  count of orders in UNDELIVERED
+ * @param undelivered  count of orders in CANCELLED (kept as {@code undelivered} for
+ *                     API stability under the 5-status model)
  * @param unassigned   count of orders with no rider assigned
  * @param byAggregator per-aggregator counts (DIRECT orders, having no aggregator, are excluded)
  */

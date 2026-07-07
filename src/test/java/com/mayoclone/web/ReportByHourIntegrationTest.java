@@ -62,7 +62,7 @@ class ReportByHourIntegrationTest extends AbstractIntegrationTest {
 
         // Two non-cancelled at the same instant, one cancelled (excluded from byHour).
         Instant t = Instant.parse("2026-06-10T09:30:00Z");
-        seed(accountId, OrderStatus.DELIVERED, t);
+        seed(accountId, OrderStatus.BILL_PENDING, t);
         seed(accountId, OrderStatus.NEW, t);
         seed(accountId, OrderStatus.CANCELLED, t);
 

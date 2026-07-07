@@ -95,13 +95,14 @@ public class ReportService {
             }
 
             statusCounts.merge(o.getStatus().name(), 1L, Long::sum);
-            if (o.getStatus() == OrderStatus.DELIVERED) {
+            // 5-status model: BILL_PENDING is the fulfilled terminal; CANCELLED the failed one.
+            if (o.getStatus() == OrderStatus.BILL_PENDING) {
                 delivered++;
-            } else if (o.getStatus() == OrderStatus.UNDELIVERED) {
+            } else if (o.getStatus() == OrderStatus.CANCELLED) {
                 undelivered++;
             }
 
-            if (o.getStatus() == OrderStatus.DELIVERED
+            if (o.getStatus() == OrderStatus.BILL_PENDING
                     && o.getPlacedAt() != null && o.getDeliveredAt() != null) {
                 long minutes = Duration.between(o.getPlacedAt(), o.getDeliveredAt()).toMinutes();
                 deliveredWithTimes++;

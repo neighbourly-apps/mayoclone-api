@@ -18,6 +18,9 @@ spring:
     enabled: false
 
 mayoclone:
+  # Uploaded files land under build/ (gitignored) during tests.
+  upload:
+    dir: build/test-uploads
   poll:
     enabled: false
   jwt:

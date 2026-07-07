@@ -109,8 +109,8 @@ public class OrderCommandService {
                     .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Rider " + req.riderId() + " not found"));
             o.setRiderId(rider.getId());
             o.setAssignedAt(Instant.now());
-            // Convenience auto-advance: a READY order goes OUT_FOR_DELIVERY when a rider picks it up.
-            if (o.getStatus() == OrderStatus.READY) {
+            // Convenience auto-advance: an ACCEPTED order goes OUT_FOR_DELIVERY when a rider picks it up.
+            if (o.getStatus() == OrderStatus.ACCEPTED) {
                 o.setStatus(OrderStatus.OUT_FOR_DELIVERY);
                 eventRepo.save(new OrderStatusEvent(o.getId(), OrderStatus.OUT_FOR_DELIVERY,
                         Instant.now(), "auto-advanced on rider assignment"));
@@ -136,7 +136,8 @@ public class OrderCommandService {
         }
 
         o.setStatus(to);
-        if (to == OrderStatus.DELIVERED) {
+        // BILL_PENDING is the "delivered, bill pending" point — stamp deliveredAt here.
+        if (to == OrderStatus.BILL_PENDING) {
             o.setDeliveredAt(Instant.now());
         }
         // Capture the cancellation reason on the order (and prefer it as the event

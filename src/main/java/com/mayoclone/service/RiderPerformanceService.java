@@ -65,13 +65,14 @@ public class RiderPerformanceService {
         long totalMinutes = 0;
 
         for (IrctcOrder o : orders) {
-            if (o.getStatus() == OrderStatus.DELIVERED) {
+            // 5-status model: BILL_PENDING == delivered (bill pending); CANCELLED == undelivered.
+            if (o.getStatus() == OrderStatus.BILL_PENDING) {
                 delivered++;
                 if (o.getAssignedAt() != null && o.getDeliveredAt() != null) {
                     timedCount++;
                     totalMinutes += Duration.between(o.getAssignedAt(), o.getDeliveredAt()).toMinutes();
                 }
-            } else if (o.getStatus() == OrderStatus.UNDELIVERED) {
+            } else if (o.getStatus() == OrderStatus.CANCELLED) {
                 undelivered++;
             }
         }

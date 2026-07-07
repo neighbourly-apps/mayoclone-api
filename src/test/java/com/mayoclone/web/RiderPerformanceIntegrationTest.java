@@ -68,7 +68,7 @@ class RiderPerformanceIntegrationTest extends AbstractIntegrationTest {
         o.setRiderId(riderId);
         Instant assigned = Instant.parse("2026-05-10T08:00:00Z");
         o.setAssignedAt(assigned);
-        if (status == OrderStatus.DELIVERED && deliveryMinutes != null) {
+        if (status == OrderStatus.BILL_PENDING && deliveryMinutes != null) {
             o.setDeliveredAt(assigned.plus(Duration.ofMinutes(deliveryMinutes)));
         }
         o.setPlacedAt(assigned);
@@ -82,10 +82,10 @@ class RiderPerformanceIntegrationTest extends AbstractIntegrationTest {
         Long accountId = readMyAccountId(token);
         Long r = rider(accountId, "Speedy");
 
-        // 2 delivered (20 + 40 min), 1 undelivered, 1 accepted (assigned but neither)
-        order(accountId, r, OrderStatus.DELIVERED, D, 20);
-        order(accountId, r, OrderStatus.DELIVERED, D, 40);
-        order(accountId, r, OrderStatus.UNDELIVERED, D, null);
+        // 2 delivered=BILL_PENDING (20 + 40 min), 1 undelivered=CANCELLED, 1 accepted (assigned but neither)
+        order(accountId, r, OrderStatus.BILL_PENDING, D, 20);
+        order(accountId, r, OrderStatus.BILL_PENDING, D, 40);
+        order(accountId, r, OrderStatus.CANCELLED, D, null);
         order(accountId, r, OrderStatus.ACCEPTED, D, null);
 
         mvc.perform(get("/api/riders/" + r + "/performance?from=" + FROM + "&to=" + TO)
@@ -122,7 +122,7 @@ class RiderPerformanceIntegrationTest extends AbstractIntegrationTest {
         Long accountId = readMyAccountId(token);
         Long active = rider(accountId, "Active");
         Long idle = rider(accountId, "Idle");
-        order(accountId, active, OrderStatus.DELIVERED, D, 15);
+        order(accountId, active, OrderStatus.BILL_PENDING, D, 15);
 
         MvcResult res = mvc.perform(get("/api/reports/riders?from=" + FROM + "&to=" + TO)
                         .header("X-Forwarded-For", uniqueIp())

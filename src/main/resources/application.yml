@@ -24,6 +24,11 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  servlet:
+    multipart:
+      # Menu-photo uploads: hard cap at 2MB (enforced again in ImageStorageService).
+      max-file-size: 2MB
+      max-request-size: 2MB
 
 management:
   endpoints:
@@ -46,6 +51,10 @@ management:
 
 # mayoclone application settings
 mayoclone:
+  # Local directory where uploaded menu photos are stored and served from
+  # (/uploads/**). Relative paths resolve against the process working dir.
+  upload:
+    dir: ${MAYOCLONE_UPLOAD_DIR:uploads}
   poll:
     # when false, PollScheduler early-returns and does not touch any mailbox
     enabled: false

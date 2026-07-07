@@ -84,15 +84,15 @@ class SettlementIntegrationTest extends AbstractIntegrationTest {
         assertEquals(0, zoop.getCommissionRate().compareTo(new BigDecimal("0.15")));
 
         // ZOOP: two eligible ONLINE orders (gross 2000) ...
-        seed(accountId, zoop, OrderType.ONLINE, OrderStatus.DELIVERED, "1000", IN);
+        seed(accountId, zoop, OrderType.ONLINE, OrderStatus.BILL_PENDING, "1000", IN);
         seed(accountId, zoop, OrderType.ONLINE, OrderStatus.NEW, "1000", IN);
         // ... plus a CANCELLED one (excluded) and an out-of-range one (excluded).
         seed(accountId, zoop, OrderType.ONLINE, OrderStatus.CANCELLED, "500", IN);
-        seed(accountId, zoop, OrderType.ONLINE, OrderStatus.DELIVERED, "5000", OUT);
+        seed(accountId, zoop, OrderType.ONLINE, OrderStatus.BILL_PENDING, "5000", OUT);
         // DIRECT (null aggregator) is not reconcilable and excluded.
-        seed(accountId, null, OrderType.DIRECT, OrderStatus.DELIVERED, "300", IN);
+        seed(accountId, null, OrderType.DIRECT, OrderStatus.BILL_PENDING, "300", IN);
         // RAILRESTRO: one eligible order (gross 1000).
-        seed(accountId, railrestro, OrderType.ONLINE, OrderStatus.DELIVERED, "1000", IN);
+        seed(accountId, railrestro, OrderType.ONLINE, OrderStatus.BILL_PENDING, "1000", IN);
 
         // --- summary ---
         MvcResult res = mvc.perform(get("/api/settlements/summary?from=" + FROM + "&to=" + TO)
@@ -200,7 +200,7 @@ class SettlementIntegrationTest extends AbstractIntegrationTest {
         String tokenA = registerAndToken(uniqueEmail(), PW);
         Long accountA = readMyAccountId(tokenA);
         Aggregator zoop = aggregatorRepo.findByCodeIgnoreCase("ZOOP").orElseThrow();
-        seed(accountA, zoop, OrderType.ONLINE, OrderStatus.DELIVERED, "1000", IN);
+        seed(accountA, zoop, OrderType.ONLINE, OrderStatus.BILL_PENDING, "1000", IN);
 
         // A different tenant sees an empty summary for the same window.
         String tokenB = registerAndToken(uniqueEmail(), PW);

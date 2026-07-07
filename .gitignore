@@ -23,3 +23,6 @@ Thumbs.db
 # --- logs ---
 logs/
 *.log
+
+# --- uploaded files (menu photos) ---
+uploads/

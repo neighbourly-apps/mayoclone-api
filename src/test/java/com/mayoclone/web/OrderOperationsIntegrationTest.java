@@ -125,21 +125,43 @@ class OrderOperationsIntegrationTest extends AbstractIntegrationTest {
         patchStatus(token, id, "ACCEPTED").andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.statusHistory.length()").value(2));
-        patchStatus(token, id, "PREPARING").andExpect(status().isOk());
-        patchStatus(token, id, "READY").andExpect(status().isOk());
         patchStatus(token, id, "OUT_FOR_DELIVERY").andExpect(status().isOk());
-        patchStatus(token, id, "DELIVERED").andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("DELIVERED"))
+        patchStatus(token, id, "BILL_PENDING").andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("BILL_PENDING"))
                 .andExpect(jsonPath("$.deliveredAt").exists())
-                .andExpect(jsonPath("$.statusHistory.length()").value(6));
+                .andExpect(jsonPath("$.statusHistory.length()").value(4));
     }
 
     @Test
     void illegalStatusTransitionIsRejectedWith409() throws Exception {
         String token = registerAndToken(uniqueEmail(), PW);
         Long id = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
-        // NEW -> READY is not allowed.
-        patchStatus(token, id, "READY").andExpect(status().isConflict());
+        // NEW -> OUT_FOR_DELIVERY is not allowed (must go via ACCEPTED).
+        patchStatus(token, id, "OUT_FOR_DELIVERY").andExpect(status().isConflict());
+    }
+
+    @Test
+    void transitionGraphEnforcesTheFiveStateModel() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PW);
+
+        // NEW -> BILL_PENDING (skipping) is illegal.
+        Long a = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
+        patchStatus(token, a, "BILL_PENDING").andExpect(status().isConflict());
+
+        // Any non-terminal may be cancelled: ACCEPTED -> CANCELLED is legal, then terminal.
+        Long b = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
+        patchStatus(token, b, "ACCEPTED").andExpect(status().isOk());
+        patchStatus(token, b, "CANCELLED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+        // CANCELLED is terminal — no further transitions.
+        patchStatus(token, b, "ACCEPTED").andExpect(status().isConflict());
+
+        // Full happy path to BILL_PENDING, which is terminal (cannot be cancelled after).
+        Long c = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
+        patchStatus(token, c, "ACCEPTED").andExpect(status().isOk());
+        patchStatus(token, c, "OUT_FOR_DELIVERY").andExpect(status().isOk());
+        patchStatus(token, c, "BILL_PENDING").andExpect(status().isOk());
+        patchStatus(token, c, "CANCELLED").andExpect(status().isConflict());
     }
 
     @Test
@@ -218,7 +240,7 @@ class OrderOperationsIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.cod.revenue").value(100))
                 .andExpect(jsonPath("$.byStatus.NEW").value(2))
                 .andExpect(jsonPath("$.byStatus.ACCEPTED").value(1))
-                .andExpect(jsonPath("$.byStatus.DELIVERED").value(0))
+                .andExpect(jsonPath("$.byStatus.BILL_PENDING").value(0))
                 .andExpect(jsonPath("$.unassigned").value(3))
                 .andExpect(jsonPath("$.undelivered").value(0));
     }

@@ -61,7 +61,8 @@ public class DashboardService {
 
             byStatus.merge(o.getStatus().name(), 1L, Long::sum);
 
-            if (o.getStatus() == OrderStatus.UNDELIVERED) {
+            // "undelivered" is redefined for the 5-status model as the CANCELLED count.
+            if (o.getStatus() == OrderStatus.CANCELLED) {
                 undelivered++;
             }
             if (o.getRiderId() == null) {
