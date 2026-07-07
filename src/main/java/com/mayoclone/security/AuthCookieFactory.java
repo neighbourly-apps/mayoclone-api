@@ -17,7 +17,13 @@ public class AuthCookieFactory {
 
     public static final String REFRESH_COOKIE = "refresh_token";
     public static final String CSRF_COOKIE = DoubleSubmitCsrfFilter.CSRF_COOKIE;
+    // The refresh token is only ever sent to /api/auth, so it stays path-scoped.
     private static final String PATH = "/api/auth";
+    // The csrf token must be READABLE by the SPA (which runs at "/") via
+    // document.cookie so it can echo it in X-CSRF-Token. Path=/api/auth hid it from
+    // document.cookie at "/", so every refresh failed the double-submit check (403)
+    // — logging users out on reload / token expiry.
+    private static final String CSRF_PATH = "/";
 
     private final boolean secure;
     private final long refreshTtlSeconds;
@@ -44,7 +50,7 @@ public class AuthCookieFactory {
                 .httpOnly(false)  // must be readable by the SPA
                 .secure(secure)
                 .sameSite("Lax")
-                .path(PATH)
+                .path(CSRF_PATH)
                 .maxAge(Duration.ofSeconds(refreshTtlSeconds))
                 .build();
     }
@@ -56,6 +62,6 @@ public class AuthCookieFactory {
 
     public ResponseCookie clearCsrfCookie() {
         return ResponseCookie.from(CSRF_COOKIE, "")
-                .httpOnly(false).secure(secure).sameSite("Lax").path(PATH).maxAge(0).build();
+                .httpOnly(false).secure(secure).sameSite("Lax").path(CSRF_PATH).maxAge(0).build();
     }
 }
