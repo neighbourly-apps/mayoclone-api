@@ -67,6 +67,22 @@ public class Vendor {
     @Column(name = "oauth_connected_at", nullable = true)
     private Instant oauthConnectedAt;
 
+    /**
+     * GMAIL_OAUTH only: the last Gmail {@code historyId} processed for this mailbox.
+     * The Gmail-push history sync uses this as the {@code startHistoryId} for the next
+     * {@code users.history.list} call, and advances it as messages are ingested.
+     */
+    @Column(name = "gmail_history_id", length = 64, nullable = true)
+    private String gmailHistoryId;
+
+    /**
+     * GMAIL_OAUTH only: when the current {@code users.watch} registration lapses
+     * (Gmail expires a watch after ~7 days). The {@code GmailWatchRenewer} re-watches
+     * mailboxes whose expiration is null or within 24h.
+     */
+    @Column(name = "gmail_watch_expiration", nullable = true)
+    private Instant gmailWatchExpiration;
+
     /** Station the vendor serves, e.g. "NDLS". */
     private String stationCode;
 
@@ -160,6 +176,22 @@ public class Vendor {
 
     public void setOauthConnectedAt(Instant oauthConnectedAt) {
         this.oauthConnectedAt = oauthConnectedAt;
+    }
+
+    public String getGmailHistoryId() {
+        return gmailHistoryId;
+    }
+
+    public void setGmailHistoryId(String gmailHistoryId) {
+        this.gmailHistoryId = gmailHistoryId;
+    }
+
+    public Instant getGmailWatchExpiration() {
+        return gmailWatchExpiration;
+    }
+
+    public void setGmailWatchExpiration(Instant gmailWatchExpiration) {
+        this.gmailWatchExpiration = gmailWatchExpiration;
     }
 
     public String getRestaurantName() {

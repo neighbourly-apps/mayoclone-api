@@ -46,7 +46,8 @@ class GmailOAuthServiceTest {
                 new OAuthStateSigner("s", 600),
                 mock(VendorRepository.class),
                 aggRepo,
-                mock(AuditService.class));
+                mock(AuditService.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
 
         assertEquals("from:(railrestro.com OR zoopindia.com)", svc.buildGmailQuery());
     }
@@ -58,7 +59,8 @@ class GmailOAuthServiceTest {
         GmailOAuthService svc = new GmailOAuthService(
                 new GmailOAuthConfig("id", "secret", "uri", "http://localhost:5173"),
                 new OAuthStateSigner("s", 600),
-                mock(VendorRepository.class), aggRepo, mock(AuditService.class));
+                mock(VendorRepository.class), aggRepo, mock(AuditService.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class));
         assertEquals("", svc.buildGmailQuery());
     }
 

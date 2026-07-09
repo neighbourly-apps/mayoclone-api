@@ -32,4 +32,16 @@ public interface VendorRepository extends JpaRepository<Vendor, Long> {
 
     Optional<Vendor> findByAccountIdAndSourceTypeAndOauthEmail(
             Long accountId, MailSourceType sourceType, String oauthEmail);
+
+    // ---- Gmail push: resolve/renew connected mailboxes (background paths) ----
+
+    /**
+     * Resolve a connected Gmail mailbox by its Google account email — used by the
+     * Pub/Sub push endpoint. Global (not account-scoped) because the push notification
+     * only carries the mailbox email, and a given Gmail address maps to one vendor.
+     */
+    Optional<Vendor> findFirstBySourceTypeAndOauthEmail(MailSourceType sourceType, String oauthEmail);
+
+    /** Active vendors of a given source type — used by the watch renewer sweep. */
+    List<Vendor> findByActiveTrueAndSourceType(MailSourceType sourceType);
 }

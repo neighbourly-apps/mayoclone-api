@@ -83,7 +83,23 @@ public class ImapIngestionService {
      * {@link #syncAccountVendors(Long)}.
      */
     public IngestResult syncAllActive() {
-        return syncAll(vendorRepo.findByActiveTrue());
+        return syncAllActive(false);
+    }
+
+    /**
+     * As {@link #syncAllActive()} but, when {@code skipGmailOAuth} is true, GMAIL_OAUTH
+     * vendors are excluded — they are driven by Gmail Pub/Sub push instead of polling.
+     * IMAP/other vendors are always polled. Both paths dedup, so correctness holds
+     * regardless of which the vendor takes.
+     */
+    public IngestResult syncAllActive(boolean skipGmailOAuth) {
+        List<Vendor> vendors = vendorRepo.findByActiveTrue();
+        if (skipGmailOAuth) {
+            vendors = vendors.stream()
+                    .filter(v -> v.getSourceType() != MailSourceType.GMAIL_OAUTH)
+                    .toList();
+        }
+        return syncAll(vendors);
     }
 
     /** Sync only the given tenant's active vendors (request-driven /api/sync). */

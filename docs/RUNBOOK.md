@@ -23,6 +23,10 @@ Set these before starting in prod. **`[REQ]`** must be a strong, non-default val
 | `MAYOCLONE_INBOUND_DOMAIN` | webhook | Per-vendor forwarding domain (needs MX) |
 | `MAYOCLONE_INBOUND_SIGNING_SECRET` | webhook | HMAC secret for `/api/inbound/email` |
 | `GOOGLE_OAUTH_CLIENT_ID` / `_CLIENT_SECRET` / `_REDIRECT_URI` | gmail | Enable Gmail OAuth (all three) |
+| `MAYOCLONE_GMAIL_PUBSUB_TOPIC` | gmail push | Pub/Sub topic for `users.watch`; blank → poll fallback |
+| `MAYOCLONE_GMAIL_PUSH_AUDIENCE` | gmail push | OIDC audience required on the push endpoint (preferred) |
+| `MAYOCLONE_GMAIL_PUSH_TOKEN` | gmail push | Shared-secret `?token=` fallback (used only if no audience) |
+| `MAYOCLONE_GMAIL_WATCH_RENEW_MS` / `MAYOCLONE_POLL_SKIP_GMAIL_WHEN_PUSH` | opt | Watch renew cadence (6h) / skip Gmail in poll (true) |
 | `MAYOCLONE_JWT_ISSUER` / `_ACCESS_TTL` / `_REFRESH_TTL` | opt | Token issuer + lifetimes |
 | `MAYOCLONE_TRACING_SAMPLING` / `MAYOCLONE_OTLP_ENDPOINT` | opt | OTLP tracing (default off) |
 | `SPRING_PROFILES_ACTIVE` | rec | `prod` → JSON logs + `ddl-auto=validate` |
@@ -186,6 +190,36 @@ aggregator create/update/delete, inbound accept/reject.
 - **"App not verified" / limited to test users**: expected until Google OAuth
   verification + **CASA** is completed for `gmail.readonly`. See
   [`INGESTION.md`](INGESTION.md). Add the user as a Test User meanwhile.
+
+### Gmail push (Pub/Sub) ingestion
+Scale-out path that replaces polling with Google Pub/Sub push + Gmail history
+sync. Full design in [`INGESTION.md`](INGESTION.md) → "Gmail push (production
+scale)". **One-time GCP setup:**
+1. Create a Pub/Sub **topic** (e.g. `projects/PROJECT/topics/gmail-push`).
+2. Grant `gmail-api-push@system.gserviceaccount.com` the **Pub/Sub Publisher**
+   role on that topic (so Gmail may publish).
+3. Create a **push subscription** → endpoint `https://<api>/api/inbound/gmail/push`,
+   with **OIDC** enabled (service-account token; **audience** = your
+   `MAYOCLONE_GMAIL_PUSH_AUDIENCE`, e.g. the endpoint URL).
+4. Set env: `MAYOCLONE_GMAIL_PUBSUB_TOPIC`, `MAYOCLONE_GMAIL_PUSH_AUDIENCE`
+   (preferred) **or** `MAYOCLONE_GMAIL_PUSH_TOKEN` (fallback shared secret, used
+   via `?token=` on the push URL). Optional: `MAYOCLONE_GMAIL_WATCH_RENEW_MS`
+   (default 6h), `MAYOCLONE_POLL_SKIP_GMAIL_WHEN_PUSH` (default true).
+5. Reconnect each Gmail mailbox (or wait for the renewer) so `users.watch`
+   registers against the topic. Watches auto-renew ~24h before their ~7-day expiry.
+
+**Symptoms & fixes**
+- **Push endpoint 503**: neither `MAYOCLONE_GMAIL_PUSH_AUDIENCE` nor
+  `MAYOCLONE_GMAIL_PUSH_TOKEN` is set — the endpoint is disabled. Set one.
+- **Push endpoint 401**: the OIDC token (or `?token=`) didn't verify. Check the
+  subscription's OIDC **audience** matches `MAYOCLONE_GMAIL_PUSH_AUDIENCE`, and
+  that the SA token isn't stripped by the proxy.
+- **No orders arriving via push**: confirm the topic env var is set, the mailbox's
+  `vendor.gmail_watch_expiration` is in the future (watch registered), and the
+  `GMAIL_HISTORY` jobs are draining (not piling up in `ingest_job` as `DEAD`).
+  Processing rides the durable job queue — see the job-queue metrics/incidents.
+- **WARN "startHistoryId too old"**: normal after a long gap; the handler
+  auto-rebaselines from the recent INBOX + profile historyId. No action needed.
 
 ### Database down / migration failure at boot
 - **DB down**: health goes unready; the app can't serve. Restore connectivity /

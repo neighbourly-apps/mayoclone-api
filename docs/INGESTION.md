@@ -170,6 +170,79 @@ forwarding webhook (path 1) as the default and treat Gmail OAuth as opt-in.
 - Read-only scope limits blast radius; still, an `MAYOCLONE_ENC_KEY` compromise
   makes stored tokens decryptable — use a secret manager and rotate.
 
+### Gmail push (production scale) — Pub/Sub + history sync
+
+By default a connected Gmail mailbox is **polled** every 60s. That does not scale
+to many restaurants (N mailboxes × poll interval × Gmail quota). The production
+path replaces polling with **Google Pub/Sub push + Gmail history sync**, all
+config-gated and OFF by default (blank config ⇒ falls back to polling; the push
+endpoint returns 503).
+
+**Moving parts**
+
+1. **`users.watch`** — on Gmail connect (and via a renewal sweep) we register a
+   watch on the INBOX label against a Pub/Sub topic. Gmail then publishes a tiny
+   notification (`{emailAddress, historyId}`) to that topic on every change. A
+   watch **expires after ~7 days**, so `GmailWatchRenewer` (`@Scheduled`, every
+   `mayoclone.gmail.watch.renew-ms`, default 6h) re-watches any mailbox whose
+   `gmail_watch_expiration` is null or within 24h. Removing a Gmail vendor
+   best-effort calls `users.stop`.
+2. **Push endpoint** — `POST /api/inbound/gmail/push` (public route; verifies
+   itself). Pub/Sub delivers the envelope
+   `{ "message": { "data": "<base64 {emailAddress,historyId}>", "messageId": "…" }, "subscription": "…" }`.
+   - **Verification** (`GmailPushVerifier`):
+     - `mayoclone.gmail.push.audience` set → require an **OIDC Bearer JWT** signed
+       by Google (verified against Google's JWKS `oauth2/v3/certs`, cached), issuer
+       `accounts.google.com` / `https://accounts.google.com`, `aud` == the
+       configured audience, not expired. **Preferred / production-grade.**
+     - else `mayoclone.gmail.push.token` set → require a matching `?token=` query
+       param (constant-time compare).
+     - else (neither) → endpoint **disabled → 503**.
+     - Invalid auth → **401**.
+   - **On a valid request**: decode the envelope; dedup on `message.messageId`
+     (`processed_push` table — safe across instances); resolve the GMAIL_OAUTH
+     vendor by `emailAddress`; **enqueue** a coalesced `GMAIL_HISTORY` job
+     (`dedupKey = gmail-history:<vendorId>`, so a burst of pushes collapses into
+     one sync); return **204** fast. Unknown email → **204** (ack + ignore, no
+     leak). Malformed/undecodable body → **400**. Only genuinely transient
+     failures surface as **5xx** so Pub/Sub retries.
+3. **`GMAIL_HISTORY` job** (`GmailHistoryJobHandler`, on the durable queue) —
+   refreshes an access token, pages
+   `users.history.list?startHistoryId=<vendor.gmail_history_id>&historyTypes=messageAdded&labelId=INBOX`,
+   fetches each added message `?format=RAW`, parses it (`MimeEmailParser`), and
+   runs it through the shared `IngestionCore` (which dedups on Message-ID, so the
+   job is idempotent). It then advances `gmail_history_id` to the newest
+   `historyId`. **404 fallback**: when `startHistoryId` is too old Gmail returns
+   404 → we list the recent 25 INBOX messages, ingest them, and **rebaseline**
+   `gmail_history_id` from `users.getProfile` (logged as a WARN). The cold-start
+   case (no baseline yet) uses the same recovery path.
+
+**Poll interplay** — the 60s poll stays as a **fallback**. When a Pub/Sub topic is
+configured and `mayoclone.poll.skip-gmail-when-push` is true (default), the
+scheduled poll **skips GMAIL_OAUTH vendors** (push drives them); IMAP/other are
+still polled. With no topic configured, Gmail vendors are polled as before. Both
+paths dedup, so correctness holds either way.
+
+**GCP / Pub/Sub setup (operator to-do)**
+
+1. Create a Pub/Sub **topic**, e.g. `projects/PROJECT/topics/gmail-push`.
+2. Grant Gmail permission to publish to it: give
+   `gmail-api-push@system.gserviceaccount.com` the **Pub/Sub Publisher** role on
+   that topic.
+3. Create a **push subscription** on the topic whose **endpoint** is
+   `https://<api>/api/inbound/gmail/push`, with **OIDC authentication** enabled
+   (a service-account token; set its **audience** to the value you put in
+   `MAYOCLONE_GMAIL_PUSH_AUDIENCE` — using the endpoint URL as the audience is a
+   good default). Prefer OIDC over the `?token=` fallback in production.
+4. Set the env vars: `MAYOCLONE_GMAIL_PUBSUB_TOPIC` (= the topic from step 1),
+   `MAYOCLONE_GMAIL_PUSH_AUDIENCE` (= the OIDC audience from step 3). Reconnect
+   each Gmail mailbox (or wait for the renewer) so `users.watch` registers against
+   the topic.
+
+Note: the same **Google verification + CASA** requirement above applies — the
+`gmail.readonly` restricted scope and `users.watch`/history APIs need a verified
+OAuth app to serve beyond Test Users.
+
 ---
 
 ## 3. IMAP app-password (fallback)

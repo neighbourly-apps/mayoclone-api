@@ -23,6 +23,14 @@ mayoclone:
     dir: build/test-uploads
   poll:
     enabled: false
+  jobs:
+    # Scheduler OFF in tests — suites drive JobQueue/JobWorker directly. Small,
+    # deterministic backoff so the backoff-schedule assertion is fast and stable.
+    enabled: false
+    backoff-base-ms: 1000
+    backoff-cap-ms: 60000
+    stuck-timeout-ms: 300000
+    max-attempts: 8
   jwt:
     secret: test-only-jwt-secret-value-that-is-long-enough-0123456789
     issuer: mayoclone-test

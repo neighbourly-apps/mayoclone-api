@@ -59,6 +59,39 @@ mayoclone:
     # when false, PollScheduler early-returns and does not touch any mailbox
     enabled: false
     interval-ms: 60000
+    # When a Gmail Pub/Sub topic is configured (mayoclone.gmail.pubsub.topic), the
+    # scheduled poll SKIPS GMAIL_OAUTH vendors (push handles them). IMAP/other are
+    # still polled. With no topic set, Gmail vendors are polled as a fallback.
+    skip-gmail-when-push: ${MAYOCLONE_POLL_SKIP_GMAIL_WHEN_PUSH:true}
+  gmail:
+    # Gmail push ingestion (Google Pub/Sub + users.watch history sync). ALL blank by
+    # default → feature OFF: mailboxes fall back to the poll and the push endpoint
+    # returns 503. See docs/INGESTION.md "Gmail push (production scale)".
+    pubsub:
+      # projects/PROJECT/topics/TOPIC passed to users.watch. BLANK → watch disabled.
+      topic: ${MAYOCLONE_GMAIL_PUBSUB_TOPIC:}
+    push:
+      # When set, POST /api/inbound/gmail/push requires a Google-signed OIDC Bearer
+      # JWT whose aud == this value (verified against Google's JWKS). PREFERRED.
+      audience: ${MAYOCLONE_GMAIL_PUSH_AUDIENCE:}
+      # Fallback shared secret: when set (and no audience), the push endpoint requires
+      # a matching ?token= query param (constant-time compare).
+      token: ${MAYOCLONE_GMAIL_PUSH_TOKEN:}
+    watch:
+      # Cadence of the users.watch renewal sweep (Gmail expires a watch after ~7d).
+      renew-ms: ${MAYOCLONE_GMAIL_WATCH_RENEW_MS:21600000}   # 6h
+  jobs:
+    # Durable background job queue (JobWorker + JobQueue). ON by default; the
+    # dispatcher claims a batch every poll-ms and runs handlers on a bounded pool.
+    enabled: ${MAYOCLONE_JOBS_ENABLED:true}
+    poll-ms: ${MAYOCLONE_JOBS_POLL_MS:2000}         # dispatch cadence
+    reap-ms: ${MAYOCLONE_JOBS_REAP_MS:60000}        # crash-recovery sweep cadence
+    batch-size: ${MAYOCLONE_JOBS_BATCH_SIZE:10}     # jobs claimed per cycle
+    concurrency: ${MAYOCLONE_JOBS_CONCURRENCY:8}    # worker-pool threads
+    max-attempts: ${MAYOCLONE_JOBS_MAX_ATTEMPTS:8}  # retries before dead-letter
+    stuck-timeout-ms: ${MAYOCLONE_JOBS_STUCK_TIMEOUT_MS:300000}  # RUNNING > this → reaped
+    backoff-base-ms: ${MAYOCLONE_JOBS_BACKOFF_BASE_MS:2000}      # base of 2^n backoff
+    backoff-cap-ms: ${MAYOCLONE_JOBS_BACKOFF_CAP_MS:300000}      # backoff ceiling
   jwt:
     # DEV DEFAULT ONLY — prod MUST set MAYOCLONE_JWT_SECRET to a strong 32+ byte secret.
     secret: ${MAYOCLONE_JWT_SECRET:dev-insecure-jwt-secret-change-me-please-0123456789abcdef}

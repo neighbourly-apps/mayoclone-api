@@ -5,6 +5,7 @@ import com.mayoclone.domain.Vendor;
 import com.mayoclone.dto.CreateVendorRequest;
 import com.mayoclone.dto.IngestResult;
 import com.mayoclone.dto.VendorDto;
+import com.mayoclone.ingest.gmail.GmailWatchService;
 import com.mayoclone.repository.VendorRepository;
 import com.mayoclone.security.CurrentAccountService;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,15 +37,18 @@ public class VendorService {
     private final ImapIngestionService ingestionService;
     private final CurrentAccountService currentAccount;
     private final AuditService auditService;
+    private final GmailWatchService gmailWatchService;
     private final String inboundDomain;
 
     public VendorService(VendorRepository vendorRepo, ImapIngestionService ingestionService,
                          CurrentAccountService currentAccount, AuditService auditService,
+                         GmailWatchService gmailWatchService,
                          @Value("${mayoclone.inbound.domain:inbound.mayoclone.local}") String inboundDomain) {
         this.vendorRepo = vendorRepo;
         this.ingestionService = ingestionService;
         this.currentAccount = currentAccount;
         this.auditService = auditService;
+        this.gmailWatchService = gmailWatchService;
         this.inboundDomain = inboundDomain;
     }
 
@@ -113,8 +117,12 @@ public class VendorService {
 
     public void delete(Long id) {
         Long accountId = currentAccount.accountId();
-        if (!vendorRepo.existsByIdAndAccountId(id, accountId)) {
-            throw new ResponseStatusException(NOT_FOUND, "Vendor " + id + " not found");
+        Vendor vendor = vendorRepo.findByIdAndAccountId(id, accountId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Vendor " + id + " not found"));
+        // Best-effort: deregister the Gmail watch BEFORE the row (and its refresh
+        // token) is deleted. Never blocks the delete.
+        if (vendor.getSourceType() == MailSourceType.GMAIL_OAUTH) {
+            gmailWatchService.stopWatch(vendor);
         }
         vendorRepo.deleteById(id);
         auditService.record(accountId, null, "vendor.delete", "vendor", String.valueOf(id));

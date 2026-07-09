@@ -7,6 +7,7 @@ import com.mayoclone.repository.VendorRepository;
 import com.mayoclone.service.AuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -45,18 +46,21 @@ public class GmailOAuthService {
     private final VendorRepository vendorRepo;
     private final AggregatorRepository aggregatorRepo;
     private final AuditService auditService;
+    private final ApplicationEventPublisher events;
     private final RestClient restClient = RestClient.create();
 
     public GmailOAuthService(GmailOAuthConfig config,
                              OAuthStateSigner stateSigner,
                              VendorRepository vendorRepo,
                              AggregatorRepository aggregatorRepo,
-                             AuditService auditService) {
+                             AuditService auditService,
+                             ApplicationEventPublisher events) {
         this.config = config;
         this.stateSigner = stateSigner;
         this.vendorRepo = vendorRepo;
         this.aggregatorRepo = aggregatorRepo;
         this.auditService = auditService;
+        this.events = events;
     }
 
     public boolean isEnabled() {
@@ -133,6 +137,10 @@ public class GmailOAuthService {
         auditService.record(accountId, email, "gmail.connect", "vendor",
                 String.valueOf(vendor.getId()), Map.of("email", email == null ? "" : email));
         log.info("Connected Gmail mailbox for account {}", accountId);
+
+        // Best-effort: kick off a users.watch registration (decoupled to avoid a
+        // dependency cycle). When no Pub/Sub topic is configured the listener no-ops.
+        events.publishEvent(new GmailConnectedEvent(vendor.getId()));
 
         return config.frontendBaseUrl() + "/vendors?gmail=connected";
     }
