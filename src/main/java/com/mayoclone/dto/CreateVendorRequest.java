@@ -21,9 +21,11 @@ import jakarta.validation.constraints.NotBlank;
 public record CreateVendorRequest(
         @NotBlank String restaurantName,
         @NotBlank @Email String ownerEmail,
-        @NotBlank String stationCode,
+        // Station + phone are for invoices — optional, so connecting a mailbox stays
+        // dead simple (email + app password). Not required to start scraping.
+        String stationCode,
         String stationName,
-        @NotBlank String phone,
+        String phone,
         String gstin,
         String addressLine,
         MailSourceType sourceType,

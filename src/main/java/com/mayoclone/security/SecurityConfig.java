@@ -130,7 +130,10 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(Arrays.stream(corsOrigins.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty()).toList());
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // PATCH is used by many endpoints (menu availability, order status/assign,
+        // rider updates, …). Omitting it made the browser's PATCH requests fail CORS
+        // with 403 "Invalid CORS request".
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-CSRF-Token"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);
