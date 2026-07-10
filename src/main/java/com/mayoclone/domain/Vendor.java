@@ -87,6 +87,23 @@ public class Vendor {
     @Column(name = "gmail_watch_expiration", nullable = true)
     private Instant gmailWatchExpiration;
 
+    /**
+     * IMAP read-agnostic fetch cursor: the highest message UID we have processed
+     * for this mailbox. We fetch by UID (&gt; this), NOT by \Seen, so an email being
+     * read by another app or a human never causes us to miss it — and we open the
+     * folder read-only, so we never mark anything read ourselves.
+     */
+    @Column(name = "imap_last_uid", nullable = true)
+    private Long imapLastUid;
+
+    /**
+     * The IMAP UIDVALIDITY of the folder when {@link #imapLastUid} was recorded. If
+     * the server reports a different UIDVALIDITY, the UID space was reset and the
+     * cursor is stale — we re-baseline with a bounded backfill.
+     */
+    @Column(name = "imap_uid_validity", nullable = true)
+    private Long imapUidValidity;
+
     /** Station the vendor serves, e.g. "NDLS". */
     private String stationCode;
 
@@ -210,6 +227,22 @@ public class Vendor {
 
     public Instant getGmailWatchExpiration() {
         return gmailWatchExpiration;
+    }
+
+    public Long getImapLastUid() {
+        return imapLastUid;
+    }
+
+    public void setImapLastUid(Long imapLastUid) {
+        this.imapLastUid = imapLastUid;
+    }
+
+    public Long getImapUidValidity() {
+        return imapUidValidity;
+    }
+
+    public void setImapUidValidity(Long imapUidValidity) {
+        this.imapUidValidity = imapUidValidity;
     }
 
     public void setGmailWatchExpiration(Instant gmailWatchExpiration) {

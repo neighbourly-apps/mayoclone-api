@@ -74,6 +74,14 @@ mayoclone:
     # dispatcher SKIPS GMAIL_OAUTH vendors (push handles them). IMAP/other are still
     # polled. With no topic set, Gmail vendors are polled as a fallback.
     skip-gmail-when-push: ${MAYOCLONE_POLL_SKIP_GMAIL_WHEN_PUSH:true}
+  imap:
+    # IMAP fetch is READ-AGNOSTIC: we pull by UID (not \Seen), so an email already read
+    # by another app or a person is still captured, and we open the folder read-only so
+    # we never mark anything read. First sync (or a UIDVALIDITY reset) backfills this many
+    # recent messages; each poll processes at most max-per-fetch so a backlog drains over
+    # cycles.
+    backfill-count: ${MAYOCLONE_IMAP_BACKFILL_COUNT:30}
+    max-per-fetch: ${MAYOCLONE_IMAP_MAX_PER_FETCH:200}
   gmail:
     # Gmail push ingestion (Google Pub/Sub + users.watch history sync). ALL blank by
     # default → feature OFF: mailboxes fall back to the poll and the push endpoint

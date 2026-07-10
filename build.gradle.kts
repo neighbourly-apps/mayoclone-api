@@ -57,6 +57,8 @@ dependencies {
     // cleanly when Docker is unavailable, so the build stays green without Docker.
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+    // In-process IMAP server for the read-agnostic UID-fetch tests (no Docker needed).
+    testImplementation("com.icegreen:greenmail-junit5:2.1.3")
 }
 tasks.withType<Test> { useJUnitPlatform() }
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") { archiveFileName.set("mayoclone-api.jar") }

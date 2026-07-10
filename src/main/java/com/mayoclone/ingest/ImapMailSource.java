@@ -3,34 +3,44 @@ package com.mayoclone.ingest;
 import com.mayoclone.domain.MailSourceType;
 import com.mayoclone.domain.Vendor;
 import jakarta.mail.BodyPart;
-import jakarta.mail.Flags;
+import jakarta.mail.FetchProfile;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
+import jakarta.mail.UIDFolder;
 import jakarta.mail.internet.MimeMessage;
-import jakarta.mail.search.FlagTerm;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
 
 /**
- * {@link MailSource} that pulls UNSEEN messages from a vendor's mailbox over
- * IMAP. Hardened:
+ * {@link MailSource} that pulls a vendor's mailbox over IMAP, <b>read-agnostic</b>:
+ * it selects messages by UID position (a stable per-message sequence), NOT by the
+ * {@code \Seen} (read/unread) flag. So an email already read by another app or a
+ * human is still fetched, and — because the folder is opened READ-ONLY and we never
+ * set any flags — we never disturb other consumers of the same inbox. A per-mailbox
+ * UID watermark ({@code vendor.imapLastUid}/{@code imapUidValidity}) makes each poll
+ * incremental; Message-ID dedup downstream is the final safety net. Hardened:
  *
  * <ul>
  *   <li>TLS is enforced (protocol {@code imaps}) with server-identity verification
  *       ({@code mail.imaps.ssl.checkserveridentity=true}); plaintext IMAP is refused.</li>
  *   <li>Connection + read timeouts are set to bound a hung mailbox.</li>
  *   <li>Transient failures are retried with exponential backoff.</li>
+ *   <li>First sync (or a UIDVALIDITY reset) does a bounded backfill of recent mail;
+ *       each cycle processes at most {@code max-per-fetch} so a big backlog drains
+ *       over several polls instead of one giant fetch.</li>
  * </ul>
  */
 @Component
@@ -42,6 +52,16 @@ public class ImapMailSource implements MailSource {
     private static final int READ_TIMEOUT_MS = 20_000;
     private static final int MAX_ATTEMPTS = 3;
     private static final long BASE_BACKOFF_MS = 500L;
+
+    private final int backfillCount;
+    private final int maxPerFetch;
+
+    public ImapMailSource(
+            @Value("${mayoclone.imap.backfill-count:30}") int backfillCount,
+            @Value("${mayoclone.imap.max-per-fetch:200}") int maxPerFetch) {
+        this.backfillCount = backfillCount;
+        this.maxPerFetch = maxPerFetch;
+    }
 
     @Override
     public MailSourceType type() {
@@ -75,7 +95,6 @@ public class ImapMailSource implements MailSource {
     private List<RawMessage> fetchOnce(Vendor vendor) throws MessagingException {
         Store store = null;
         Folder inbox = null;
-        List<RawMessage> out = new ArrayList<>();
         try {
             // Always require TLS: refuse to send credentials over a plaintext connection.
             Properties props = new Properties();
@@ -85,6 +104,10 @@ public class ImapMailSource implements MailSource {
             props.put("mail.imaps.connectiontimeout", String.valueOf(CONNECT_TIMEOUT_MS));
             props.put("mail.imaps.timeout", String.valueOf(READ_TIMEOUT_MS));
             props.put("mail.imaps.writetimeout", String.valueOf(READ_TIMEOUT_MS));
+            // BODY.PEEK: read message bodies WITHOUT ever setting \Seen, so we never
+            // disturb another app/human reading the same shared inbox — guaranteed on
+            // any server, not just those that suppress \Seen in read-only mode.
+            props.put("mail.imaps.peek", "true");
 
             Session session = Session.getInstance(props);
             store = session.getStore("imaps");
@@ -93,21 +116,114 @@ public class ImapMailSource implements MailSource {
             store.connect(vendor.getImapHost(), vendor.getImapPort(), username, vendor.getImapPassword());
 
             inbox = store.getFolder("INBOX");
-            inbox.open(Folder.READ_ONLY);
-
-            Message[] messages = inbox.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
-            for (Message message : messages) {
-                String from = firstAddress(message);
-                String subject = Optional.ofNullable(message.getSubject()).orElse("");
-                String body = extractText(message);
-                String messageId = stableMessageId(message, subject);
-                out.add(new RawMessage(from, subject, body, messageId));
-            }
-            return out;
+            inbox.open(Folder.READ_ONLY); // read-only: we never set \Seen — no interference
+            return collect(vendor, inbox);
         } finally {
             closeQuietly(inbox);
             closeQuietly(store);
         }
+    }
+
+    /**
+     * Read-agnostic fetch from an already-opened, READ-ONLY INBOX. Selects messages by
+     * UID (independent of read/unread), advances the vendor's UID watermark, and never
+     * sets any flags. Package-private so an embedded-IMAP (GreenMail) test can drive the
+     * exact UID logic without needing TLS.
+     */
+    List<RawMessage> collect(Vendor vendor, Folder inbox) throws MessagingException {
+        UIDFolder uf = (UIDFolder) inbox;
+        long validity = uf.getUIDValidity();
+        Long lastUid = vendor.getImapLastUid();
+        Long knownValidity = vendor.getImapUidValidity();
+
+        Message[] candidates;
+        boolean freshStart = knownValidity == null || !knownValidity.equals(validity) || lastUid == null;
+        if (freshStart) {
+            // New mailbox, or the server reset UIDVALIDITY: re-baseline with a bounded
+            // backfill of the most recent messages (never pull the whole history).
+            candidates = mostRecentByUid(uf, inbox.getMessages(), backfillCount);
+        } else {
+            // Incremental: everything with UID strictly greater than the last processed,
+            // regardless of read/unread; capped so a large backlog drains over cycles.
+            candidates = filterAndCap(uf, uf.getMessagesByUID(lastUid + 1, UIDFolder.LASTUID), lastUid);
+        }
+
+        if (candidates.length > 0) {
+            FetchProfile fp = new FetchProfile();
+            fp.add(UIDFolder.FetchProfileItem.UID);
+            fp.add(FetchProfile.Item.ENVELOPE);
+            inbox.fetch(candidates, fp);
+        }
+
+        long base = lastUid == null ? 0L : lastUid;
+        long maxUid = base;
+        List<RawMessage> out = new ArrayList<>(candidates.length);
+        for (Message message : candidates) {
+            long uid = uf.getUID(message);
+            String from = firstAddress(message);
+            String subject = Optional.ofNullable(message.getSubject()).orElse("");
+            String body = extractText(message);
+            String messageId = stableMessageId(message, subject);
+            out.add(new RawMessage(from, subject, body, messageId));
+            if (uid > maxUid) {
+                maxUid = uid;
+            }
+        }
+
+        // Persist the cursor on the vendor (syncVendor saves it). Advance only to the max
+        // UID actually processed; if the mailbox was empty on a fresh start, baseline at
+        // the folder's current max so we start from "now".
+        vendor.setImapUidValidity(validity);
+        if (maxUid > base) {
+            vendor.setImapLastUid(maxUid);
+        } else if (freshStart) {
+            vendor.setImapLastUid(currentMaxUid(uf, inbox));
+        }
+        return out;
+    }
+
+    /** The most recent {@code n} messages by UID, returned in ascending-UID order. */
+    private Message[] mostRecentByUid(UIDFolder uf, Message[] msgs, int n) throws MessagingException {
+        record M(long uid, Message m) { }
+        List<M> list = new ArrayList<>(msgs.length);
+        for (Message m : msgs) {
+            list.add(new M(uf.getUID(m), m));
+        }
+        list.sort(Comparator.comparingLong(M::uid));
+        int from = Math.max(0, list.size() - n);
+        List<M> tail = list.subList(from, list.size());
+        Message[] out = new Message[tail.size()];
+        for (int i = 0; i < tail.size(); i++) {
+            out[i] = tail.get(i).m();
+        }
+        return out;
+    }
+
+    /** Keep only UIDs strictly greater than the watermark, ascending, capped at maxPerFetch. */
+    private Message[] filterAndCap(UIDFolder uf, Message[] msgs, long lastUid) throws MessagingException {
+        record M(long uid, Message m) { }
+        List<M> list = new ArrayList<>();
+        for (Message m : msgs) {
+            long uid = uf.getUID(m);
+            if (uid > lastUid) {
+                list.add(new M(uid, m));
+            }
+        }
+        list.sort(Comparator.comparingLong(M::uid));
+        if (list.size() > maxPerFetch) {
+            list = new ArrayList<>(list.subList(0, maxPerFetch)); // oldest first
+        }
+        Message[] out = new Message[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            out[i] = list.get(i).m();
+        }
+        return out;
+    }
+
+    /** Highest UID currently in the folder (0 when empty) — used to baseline an empty mailbox. */
+    private long currentMaxUid(UIDFolder uf, Folder inbox) throws MessagingException {
+        int count = inbox.getMessageCount();
+        return count <= 0 ? 0L : uf.getUID(inbox.getMessage(count));
     }
 
     /** Connectivity/timeout errors are worth retrying; auth/protocol errors are not. */
