@@ -28,6 +28,8 @@ public record VendorDto(
         boolean useSsl,
         boolean active,
         Instant lastSyncedAt,
+        String lastSyncError,
+        Instant nextPollAt,
         Instant createdAt
 ) {
 
@@ -51,6 +53,8 @@ public record VendorDto(
                 v.isUseSsl(),
                 v.isActive(),
                 v.getLastSyncedAt(),
+                v.getLastSyncError(),
+                v.getNextPollAt(),
                 v.getCreatedAt()
         );
     }

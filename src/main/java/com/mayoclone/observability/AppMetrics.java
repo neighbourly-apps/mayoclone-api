@@ -16,6 +16,8 @@ import org.springframework.stereotype.Component;
  *   <li>{@code mayoclone.webhook.inbound}   — tag: result</li>
  *   <li>{@code mayoclone.auth.login}        — tag: result</li>
  *   <li>{@code mayoclone.sync.duration}     — timer around the sync path</li>
+ *   <li>{@code mayoclone.mailbox.sync}      — counter, tag: result (ok|fail) — per-vendor MAILBOX_SYNC outcome</li>
+ *   <li>{@code mayoclone.poll.dispatched}   — counter, MAILBOX_SYNC jobs enqueued by the dispatcher</li>
  * </ul>
  */
 @Component
@@ -26,6 +28,11 @@ public class AppMetrics {
     public static final String WEBHOOK_INBOUND = "mayoclone.webhook.inbound";
     public static final String AUTH_LOGIN = "mayoclone.auth.login";
     public static final String SYNC_DURATION = "mayoclone.sync.duration";
+    public static final String MAILBOX_SYNC = "mayoclone.mailbox.sync";
+    public static final String POLL_DISPATCHED = "mayoclone.poll.dispatched";
+
+    public static final String RESULT_OK = "ok";
+    public static final String RESULT_FAIL = "fail";
 
     private final MeterRegistry registry;
 
@@ -71,6 +78,24 @@ public class AppMetrics {
         sample.stop(Timer.builder(SYNC_DURATION)
                 .tag("sourceType", safe(sourceType))
                 .register(registry));
+    }
+
+    /** Outcome of one queued per-vendor mailbox sync. {@code result} is {@code ok} or {@code fail}. */
+    public void mailboxSync(String result) {
+        Counter.builder(MAILBOX_SYNC)
+                .tag("result", safe(result))
+                .register(registry)
+                .increment();
+    }
+
+    /** Count of MAILBOX_SYNC jobs the dispatcher enqueued this tick (batch size). */
+    public void pollDispatched(int count) {
+        if (count <= 0) {
+            return;
+        }
+        Counter.builder(POLL_DISPATCHED)
+                .register(registry)
+                .increment(count);
     }
 
     private static String safe(String v) {

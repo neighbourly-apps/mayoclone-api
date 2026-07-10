@@ -78,9 +78,10 @@ public class ImapIngestionService {
     }
 
     /**
-     * Sync every active vendor across ALL tenants — used ONLY by the background
-     * {@link com.mayoclone.service.PollScheduler}. Request-driven syncs must use
-     * {@link #syncAccountVendors(Long)}.
+     * Sync every active vendor across ALL tenants, inline. Scheduled polling now runs
+     * per-vendor on the durable job queue ({@link MailboxPollDispatcher} +
+     * {@code MAILBOX_SYNC} handler); this inline sweep is retained only for manual/admin
+     * use. Request-driven syncs must use {@link #syncAccountVendors(Long)}.
      */
     public IngestResult syncAllActive() {
         return syncAllActive(false);

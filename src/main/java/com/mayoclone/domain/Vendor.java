@@ -23,7 +23,11 @@ import java.time.Instant;
  * {@link AesGcmStringConverter} and is NEVER exposed in any DTO or toString().
  */
 @Entity
-@Table(name = "vendor", indexes = @Index(name = "idx_vendor_account", columnList = "account_id"))
+@Table(name = "vendor", indexes = {
+        @Index(name = "idx_vendor_account", columnList = "account_id"),
+        // Backs the MailboxPollDispatcher "due vendors" query at 2000+ scale.
+        @Index(name = "idx_vendor_due_poll", columnList = "active, source_type, next_poll_at")
+})
 public class Vendor {
 
     @Id
@@ -115,6 +119,24 @@ public class Vendor {
     /** Last successful sync time; null until first sync. */
     @Column(nullable = true)
     private Instant lastSyncedAt;
+
+    /**
+     * Mailbox-sync scheduling: earliest time this vendor is due for another sync. NULL
+     * means "never polled → poll now". The {@code MailboxPollDispatcher} selects due
+     * vendors on this column and bumps it forward on enqueue; the
+     * {@code MailboxSyncJobHandler} resets it on completion (now + interval on success,
+     * exponential backoff on failure).
+     */
+    @Column(name = "next_poll_at", nullable = true)
+    private Instant nextPollAt;
+
+    /** Consecutive mailbox-sync failures; drives the per-vendor exponential backoff. */
+    @Column(name = "poll_failure_count", nullable = false)
+    private int pollFailureCount = 0;
+
+    /** Truncated last mailbox error (surfaced on the vendor card). Cleared on success. */
+    @Column(name = "last_sync_error", columnDefinition = "text", nullable = true)
+    private String lastSyncError;
 
     private Instant createdAt;
 
@@ -304,6 +326,30 @@ public class Vendor {
 
     public void setLastSyncedAt(Instant lastSyncedAt) {
         this.lastSyncedAt = lastSyncedAt;
+    }
+
+    public Instant getNextPollAt() {
+        return nextPollAt;
+    }
+
+    public void setNextPollAt(Instant nextPollAt) {
+        this.nextPollAt = nextPollAt;
+    }
+
+    public int getPollFailureCount() {
+        return pollFailureCount;
+    }
+
+    public void setPollFailureCount(int pollFailureCount) {
+        this.pollFailureCount = pollFailureCount;
+    }
+
+    public String getLastSyncError() {
+        return lastSyncError;
+    }
+
+    public void setLastSyncError(String lastSyncError) {
+        this.lastSyncError = lastSyncError;
     }
 
     public Instant getCreatedAt() {
