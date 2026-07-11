@@ -71,12 +71,28 @@ public class AdminService {
         long newLast7 = accountRepo.countByRoleNotAndCreatedAtAfter(sa, Instant.now().minus(7, ChronoUnit.DAYS));
         long totalRevenue = paymentRepo.totalRevenuePaise();
         long paying = paymentRepo.payingAccountCount();
-        // MRR estimate = number of ACTIVE (paid) tenant accounts × the plan's monthly
-        // amount. We use the ACTIVE count rather than everPaid so churned/cancelled
-        // accounts don't count toward recurring revenue.
-        long mrr = active * billingProps.getPlanAmount();
+        long mrr = mrrEstimatePaise();
         return new AdminStatsDto(total, trialing, active, expired, cancelled,
                 newLast7, totalRevenue, paying, mrr);
+    }
+
+    /**
+     * MRR estimate = sum over ACTIVE (paid) tenant accounts of their plan's
+     * monthly-equivalent amount (paise). Per plan: a ~monthly plan (periodDays &lt; 360)
+     * counts its full amount; an annual plan (periodDays &gt;= 360) counts {@code amount / 12}.
+     * Accounts with a null/unknown plan (e.g. grandfathered ACTIVE rows) count as the
+     * default plan. ACTIVE-only so churned/cancelled accounts don't inflate recurring revenue.
+     */
+    private long mrrEstimatePaise() {
+        long mrr = 0;
+        for (Object[] row : accountRepo.countActiveByPlan(Account.ROLE_SUPER_ADMIN, SubscriptionStatus.ACTIVE)) {
+            String planCode = (String) row[0];
+            long count = ((Number) row[1]).longValue();
+            var plan = billingProps.planOrDefault(planCode);
+            long monthlyEquiv = plan.periodDays() >= 360 ? Math.round(plan.amount() / 12.0) : plan.amount();
+            mrr += count * monthlyEquiv;
+        }
+        return mrr;
     }
 
     // ---- List --------------------------------------------------------------

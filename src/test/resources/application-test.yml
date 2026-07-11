@@ -59,12 +59,22 @@ mayoclone:
     # properties. dev-mode ON so the dev-activate flow is testable without Razorpay.
     enforce: false
     dev-mode: true
-    plan:
-      code: pro-monthly
-      name: MayoClone Pro
-      amount: 99900
-      currency: INR
-      period-days: 30
+    default-plan-code: pro-monthly
+    plans:
+      pro-monthly:
+        name: Monthly
+        amount: 120000
+        currency: INR
+        period-days: 30
+      pro-annual:
+        name: Annual
+        amount: 1299900
+        currency: INR
+        period-days: 365
+    # Reminder scheduler OFF in tests — suites call RenewalReminderJob.sweep() directly.
+    reminder:
+      enabled: false
+      days-before: 5
   razorpay:
     # key-id BLANK → checkout returns 503 (unconfigured). key-secret + webhook-secret
     # are set so the verify/webhook signature tests can compute a matching HMAC.

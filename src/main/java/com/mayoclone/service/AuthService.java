@@ -55,7 +55,7 @@ public class AuthService {
                        @org.springframework.beans.factory.annotation.Value(
                                "${mayoclone.auth.require-email-otp:false}") boolean requireEmailOtp,
                        @org.springframework.beans.factory.annotation.Value(
-                               "${mayoclone.billing.plan.code:pro-monthly}") String defaultPlanCode) {
+                               "${mayoclone.billing.default-plan-code:pro-monthly}") String defaultPlanCode) {
         this.accountRepo = accountRepo;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;

@@ -164,12 +164,30 @@ mayoclone:
     # When true, exposes POST /api/billing/dev-activate to simulate a successful
     # payment WITHOUT Razorpay (local testing). MUST be false in prod.
     dev-mode: ${MAYOCLONE_BILLING_DEV_MODE:false}
-    plan:
-      code: ${MAYOCLONE_BILLING_PLAN_CODE:pro-monthly}
-      name: ${MAYOCLONE_BILLING_PLAN_NAME:MayoClone Pro}
-      amount: ${MAYOCLONE_BILLING_PLAN_AMOUNT:99900}      # paise (₹999.00)
-      currency: ${MAYOCLONE_BILLING_PLAN_CURRENCY:INR}
-      period-days: ${MAYOCLONE_BILLING_PLAN_PERIOD_DAYS:30}
+    # Two purchasable plans (both env-overridable). Codes are FIXED (pro-monthly,
+    # pro-annual); only name/amount/currency/period-days are configurable. Amounts
+    # are in paise. default-plan-code is used by checkout/dev-activate when no plan
+    # is supplied, and as the trial default for new accounts.
+    default-plan-code: ${MAYOCLONE_BILLING_DEFAULT_PLAN:pro-monthly}
+    plans:
+      pro-monthly:
+        name: ${MAYOCLONE_PLAN_MONTHLY_NAME:Monthly}
+        amount: ${MAYOCLONE_PLAN_MONTHLY_AMOUNT:120000}       # paise (₹1200.00)
+        currency: ${MAYOCLONE_PLAN_MONTHLY_CURRENCY:INR}
+        period-days: ${MAYOCLONE_PLAN_MONTHLY_PERIOD_DAYS:30}
+      pro-annual:
+        name: ${MAYOCLONE_PLAN_ANNUAL_NAME:Annual}
+        amount: ${MAYOCLONE_PLAN_ANNUAL_AMOUNT:1299900}       # paise (₹12999.00)
+        currency: ${MAYOCLONE_PLAN_ANNUAL_CURRENCY:INR}
+        period-days: ${MAYOCLONE_PLAN_ANNUAL_PERIOD_DAYS:365}
+    # Renewal-reminder sweep: emails owners this many days before a paid period or
+    # trial lapses. enabled=false turns the scheduler off entirely. fixed-delay-ms is
+    # the gap between sweeps (default hourly); max-per-run caps accounts per sweep.
+    reminder:
+      enabled: ${MAYOCLONE_BILLING_REMINDER_ENABLED:true}
+      days-before: ${MAYOCLONE_BILLING_REMINDER_DAYS_BEFORE:5}
+      fixed-delay-ms: ${MAYOCLONE_BILLING_REMINDER_FIXED_DELAY_MS:3600000}
+      max-per-run: ${MAYOCLONE_BILLING_REMINDER_MAX_PER_RUN:500}
   razorpay:
     # All BLANK by default → Razorpay is DISABLED: /checkout returns 503, and
     # verify/webhook reject (no secret to check against). Set the three to go live.

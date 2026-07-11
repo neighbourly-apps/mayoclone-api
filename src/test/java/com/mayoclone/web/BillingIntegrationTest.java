@@ -5,6 +5,8 @@ import com.mayoclone.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -46,9 +48,77 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.active").value(true))
                 .andExpect(jsonPath("$.trialDaysLeft").value(14))
                 .andExpect(jsonPath("$.plan.code").value("pro-monthly"))
-                .andExpect(jsonPath("$.plan.amount").value(99900))
+                .andExpect(jsonPath("$.plan.amount").value(120000))
+                // Both purchasable plans, monthly first, with their ₹1200 / ₹12999 amounts.
+                .andExpect(jsonPath("$.plans.length()").value(2))
+                .andExpect(jsonPath("$.plans[0].code").value("pro-monthly"))
+                .andExpect(jsonPath("$.plans[0].name").value("Monthly"))
+                .andExpect(jsonPath("$.plans[0].amount").value(120000))
+                .andExpect(jsonPath("$.plans[0].periodDays").value(30))
+                .andExpect(jsonPath("$.plans[1].code").value("pro-annual"))
+                .andExpect(jsonPath("$.plans[1].name").value("Annual"))
+                .andExpect(jsonPath("$.plans[1].amount").value(1299900))
+                .andExpect(jsonPath("$.plans[1].periodDays").value(365))
                 .andExpect(jsonPath("$.razorpayEnabled").value(false))
                 .andExpect(jsonPath("$.devMode").value(true));
+    }
+
+    @Test
+    void devActivateAnnualSetsPlanAndExtends365Days() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PASSWORD);
+        Instant expectedLower = Instant.now().plus(363, ChronoUnit.DAYS);
+        Instant expectedUpper = Instant.now().plus(367, ChronoUnit.DAYS);
+
+        MvcResult res = mvc.perform(post("/api/billing/dev-activate")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"plan\":\"pro-annual\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.plan.code").value("pro-annual"))
+                .andExpect(jsonPath("$.plan.amount").value(1299900))
+                .andReturn();
+
+        Map<?, ?> body = json.readValue(res.getResponse().getContentAsString(), Map.class);
+        Instant cpe = Instant.parse((String) body.get("currentPeriodEnd"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                cpe.isAfter(expectedLower) && cpe.isBefore(expectedUpper),
+                "annual currentPeriodEnd should be ~365d out, was " + cpe);
+    }
+
+    @Test
+    void devActivateMonthlyExtends30Days() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PASSWORD);
+        Instant expectedLower = Instant.now().plus(28, ChronoUnit.DAYS);
+        Instant expectedUpper = Instant.now().plus(32, ChronoUnit.DAYS);
+
+        MvcResult res = mvc.perform(post("/api/billing/dev-activate")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"plan\":\"pro-monthly\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.code").value("pro-monthly"))
+                .andReturn();
+
+        Map<?, ?> body = json.readValue(res.getResponse().getContentAsString(), Map.class);
+        Instant cpe = Instant.parse((String) body.get("currentPeriodEnd"));
+        org.junit.jupiter.api.Assertions.assertTrue(
+                cpe.isAfter(expectedLower) && cpe.isBefore(expectedUpper),
+                "monthly currentPeriodEnd should be ~30d out, was " + cpe);
+    }
+
+    @Test
+    void devActivateUnknownPlanIsBadRequest() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PASSWORD);
+        mvc.perform(post("/api/billing/dev-activate")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"plan\":\"bogus-plan\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unknown_plan"));
     }
 
     @Test

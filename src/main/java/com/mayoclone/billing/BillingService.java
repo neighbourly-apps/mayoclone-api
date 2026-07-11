@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -55,11 +56,6 @@ public class BillingService {
         this.json = json;
     }
 
-    private PlanDto plan() {
-        return new PlanDto(props.getPlanCode(), props.getPlanName(), props.getPlanAmount(),
-                props.getPlanCurrency(), props.getPlanPeriodDays());
-    }
-
     // --- status ---------------------------------------------------------------
 
     @Transactional(readOnly = true)
@@ -82,7 +78,8 @@ public class BillingService {
                 a.getCurrentPeriodEnd(),
                 active,
                 trialDaysLeft,
-                plan(),
+                props.planOrDefault(a.getPlan()),   // account's CURRENT plan (default when unset)
+                List.copyOf(props.plans()),          // all purchasable plans (monthly first)
                 props.isRazorpayEnabled(),
                 props.isDevMode());
     }
@@ -90,34 +87,38 @@ public class BillingService {
     // --- checkout -------------------------------------------------------------
 
     @Transactional(readOnly = true)
-    public CheckoutResponse checkout(Long accountId) {
+    public CheckoutResponse checkout(Long accountId, String planCode) {
         if (!props.isRazorpayEnabled()) {
             throw new BillingException(HttpStatus.SERVICE_UNAVAILABLE, "billing_not_configured");
         }
+        PlanDto plan = props.plan(planCode); // 400 on unknown code
         Account a = load(accountId);
         String receipt = "acct-" + a.getId() + "-" + Instant.now().getEpochSecond();
+        // The plan code rides along in the order notes so the SERVER webhook can learn
+        // which plan was paid; the client /verify carries it in its request body.
         String orderId = razorpay.createOrder(
                 props.getRazorpayKeyId(), props.getRazorpayKeySecret(),
-                props.getPlanAmount(), props.getPlanCurrency(), receipt,
-                Map.of("accountId", String.valueOf(a.getId())));
+                plan.amount(), plan.currency(), receipt,
+                Map.of("accountId", String.valueOf(a.getId()), "plan", plan.code()));
         return new CheckoutResponse(props.getRazorpayKeyId(), orderId,
-                props.getPlanAmount(), props.getPlanCurrency(), props.getPlanName());
+                plan.amount(), plan.currency(), plan.name(), plan.code());
     }
 
     // --- verify (client callback) --------------------------------------------
 
     @Transactional
-    public BillingStatus verify(Long accountId, String orderId, String paymentId, String signature) {
+    public BillingStatus verify(Long accountId, String orderId, String paymentId, String signature, String planCode) {
         if (orderId == null || paymentId == null || signature == null
                 || props.getRazorpayKeySecret().isBlank()
                 || !RazorpaySignature.verify(props.getRazorpayKeySecret(),
                 orderId + "|" + paymentId, signature)) {
             throw new BillingException(HttpStatus.BAD_REQUEST, "invalid_signature");
         }
+        PlanDto plan = props.plan(planCode); // 400 on unknown code
         Account a = load(accountId);
-        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, props.getPlanAmount(), props.getPlanCurrency());
+        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, plan);
         auditService.record(a.getId(), a.getEmail(), "billing.verify", "account",
-                String.valueOf(a.getId()), Map.of("paymentId", paymentId));
+                String.valueOf(a.getId()), Map.of("paymentId", paymentId, "plan", plan.code()));
         return statusFor(a);
     }
 
@@ -151,48 +152,86 @@ public class BillingService {
             log.warn("Razorpay webhook {}: could not resolve payment/account", event);
             return;
         }
-        long amount = payment.get("amount") == null ? props.getPlanAmount() : asLong(payment.get("amount"));
-        String currency = payment.get("currency") == null ? props.getPlanCurrency() : str(payment.get("currency"));
+        // Plan the customer paid for: from the order/payment notes we set at checkout,
+        // falling back to the account's current plan, then the default.
+        PlanDto plan = resolvePlanFromNotes(payment, order);
+        long amount = payment.get("amount") == null ? plan.amount() : asLong(payment.get("amount"));
+        String currency = payment.get("currency") == null ? plan.currency() : str(payment.get("currency"));
         Account a = accountRepo.findById(acctId).orElse(null);
         if (a == null) {
             log.warn("Razorpay webhook: account {} not found", acctId);
             return;
         }
-        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, amount, currency);
+        if (plan == null) {
+            plan = props.planOrDefault(a.getPlan());
+        }
+        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, plan, amount, currency);
         auditService.record(a.getId(), a.getEmail(), "billing.webhook", "account",
-                String.valueOf(a.getId()), Map.of("event", event, "paymentId", paymentId));
+                String.valueOf(a.getId()), Map.of("event", event, "paymentId", paymentId, "plan", plan.code()));
     }
 
     // --- dev-activate ---------------------------------------------------------
 
     @Transactional
-    public BillingStatus devActivate(Long accountId) {
+    public BillingStatus devActivate(Long accountId, String planCode) {
         if (!props.isDevMode()) {
             throw new BillingException(HttpStatus.NOT_FOUND, "not_found");
         }
+        PlanDto plan = props.plan(planCode); // 400 on unknown code
         Account a = load(accountId);
         String paymentId = "dev-" + a.getId() + "-" + Instant.now().toEpochMilli();
-        extendPeriod(a, PROVIDER_DEV, paymentId, props.getPlanAmount(), props.getPlanCurrency());
+        extendPeriod(a, PROVIDER_DEV, paymentId, plan);
         auditService.record(a.getId(), a.getEmail(), "billing.dev_activate", "account",
-                String.valueOf(a.getId()));
+                String.valueOf(a.getId()), Map.of("plan", plan.code()));
         return statusFor(a);
     }
 
     // --- shared ---------------------------------------------------------------
 
-    /** Idempotent on (provider, paymentId): extends the paid period by the plan window. */
-    private void extendPeriod(Account a, String provider, String paymentId, long amount, String currency) {
+    private void extendPeriod(Account a, String provider, String paymentId, PlanDto plan) {
+        extendPeriod(a, provider, paymentId, plan, plan.amount(), plan.currency());
+    }
+
+    /**
+     * Idempotent on (provider, paymentId): sets the account's plan to {@code plan},
+     * extends the paid period by that plan's window (from max(now, currentPeriodEnd)),
+     * marks ACTIVE, and RESETS the renewal-reminder marker so the next period reminds.
+     */
+    private void extendPeriod(Account a, String provider, String paymentId, PlanDto plan, long amount, String currency) {
         if (paymentRepo.existsByProviderAndProviderPaymentId(provider, paymentId)) {
             return; // already processed
         }
         Instant now = Instant.now();
         Instant base = (a.getCurrentPeriodEnd() != null && a.getCurrentPeriodEnd().isAfter(now))
                 ? a.getCurrentPeriodEnd() : now;
-        a.setCurrentPeriodEnd(base.plus(props.getPlanPeriodDays(), ChronoUnit.DAYS));
+        a.setCurrentPeriodEnd(base.plus(plan.periodDays(), ChronoUnit.DAYS));
         a.setSubscriptionStatus(SubscriptionStatus.ACTIVE);
-        a.setPlan(props.getPlanCode());
+        a.setPlan(plan.code());
+        a.setRenewalReminderSentAt(null); // new period → allow a fresh renewal reminder
         accountRepo.save(a);
         paymentRepo.save(new SubscriptionPayment(a.getId(), provider, paymentId, amount, currency, now));
+    }
+
+    /** Reads a {@code plan} note off the payment/order entity; null when absent/unknown. */
+    @SuppressWarnings("unchecked")
+    private PlanDto resolvePlanFromNotes(Map<String, Object> payment, Map<String, Object> order) {
+        for (Map<String, Object> src : new Map[]{payment, order}) {
+            if (src == null) {
+                continue;
+            }
+            Object notes = src.get("notes");
+            if (notes instanceof Map<?, ?> m) {
+                Object code = ((Map<String, Object>) m).get("plan");
+                if (code != null && !String.valueOf(code).isBlank()) {
+                    try {
+                        return props.plan(String.valueOf(code));
+                    } catch (BillingException ignored) {
+                        // unknown note value — fall through to caller's default
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private Account load(Long accountId) {

@@ -1,7 +1,9 @@
 package com.mayoclone.web;
 
 import com.mayoclone.billing.BillingDtos.BillingStatus;
+import com.mayoclone.billing.BillingDtos.CheckoutRequest;
 import com.mayoclone.billing.BillingDtos.CheckoutResponse;
+import com.mayoclone.billing.BillingDtos.DevActivateRequest;
 import com.mayoclone.billing.BillingDtos.VerifyRequest;
 import com.mayoclone.billing.BillingService;
 import com.mayoclone.security.CurrentAccountService;
@@ -45,14 +47,14 @@ public class BillingController {
     }
 
     @PostMapping("/checkout")
-    public CheckoutResponse checkout() {
-        return billing.checkout(currentAccount.accountId());
+    public CheckoutResponse checkout(@RequestBody(required = false) CheckoutRequest req) {
+        return billing.checkout(currentAccount.accountId(), req == null ? null : req.plan());
     }
 
     @PostMapping("/verify")
     public BillingStatus verify(@RequestBody VerifyRequest req) {
         return billing.verify(currentAccount.accountId(),
-                req.razorpayOrderId(), req.razorpayPaymentId(), req.razorpaySignature());
+                req.razorpayOrderId(), req.razorpayPaymentId(), req.razorpaySignature(), req.plan());
     }
 
     @PostMapping("/webhook")
@@ -64,7 +66,7 @@ public class BillingController {
     }
 
     @PostMapping("/dev-activate")
-    public BillingStatus devActivate() {
-        return billing.devActivate(currentAccount.accountId());
+    public BillingStatus devActivate(@RequestBody(required = false) DevActivateRequest req) {
+        return billing.devActivate(currentAccount.accountId(), req == null ? null : req.plan());
     }
 }

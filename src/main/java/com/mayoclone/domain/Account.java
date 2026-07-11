@@ -100,6 +100,14 @@ public class Account {
     @Column(name = "plan", length = 64)
     private String plan;
 
+    /**
+     * When the "renews soon" reminder was last sent for the CURRENT period (V15).
+     * Reset to null on each (re)activation so the next period reminds again; the
+     * reminder sweep only picks accounts where this is null. (dedupes per period.)
+     */
+    @Column(name = "renewal_reminder_sent_at")
+    private Instant renewalReminderSentAt;
+
     public Account() {
     }
 
@@ -237,6 +245,14 @@ public class Account {
 
     public void setPlan(String plan) {
         this.plan = plan;
+    }
+
+    public Instant getRenewalReminderSentAt() {
+        return renewalReminderSentAt;
+    }
+
+    public void setRenewalReminderSentAt(Instant renewalReminderSentAt) {
+        this.renewalReminderSentAt = renewalReminderSentAt;
     }
 
     /**
