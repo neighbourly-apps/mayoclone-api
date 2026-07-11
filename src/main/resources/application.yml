@@ -157,6 +157,27 @@ mayoclone:
     # verify POST /api/inbound/mailgun. EMPTY BY DEFAULT → that endpoint is DISABLED
     # and returns 503. Set MAYOCLONE_MAILGUN_SIGNING_KEY to enable the Mailgun path.
     signing-key: ${MAYOCLONE_MAILGUN_SIGNING_KEY:}
+  billing:
+    # The real gate: when true, accounts with an expired trial and no paid period are
+    # blocked with 402 on protected /api/** calls. Auth/billing/actuator stay open.
+    enforce: ${MAYOCLONE_BILLING_ENFORCE:true}
+    # When true, exposes POST /api/billing/dev-activate to simulate a successful
+    # payment WITHOUT Razorpay (local testing). MUST be false in prod.
+    dev-mode: ${MAYOCLONE_BILLING_DEV_MODE:false}
+    plan:
+      code: ${MAYOCLONE_BILLING_PLAN_CODE:pro-monthly}
+      name: ${MAYOCLONE_BILLING_PLAN_NAME:MayoClone Pro}
+      amount: ${MAYOCLONE_BILLING_PLAN_AMOUNT:99900}      # paise (₹999.00)
+      currency: ${MAYOCLONE_BILLING_PLAN_CURRENCY:INR}
+      period-days: ${MAYOCLONE_BILLING_PLAN_PERIOD_DAYS:30}
+  razorpay:
+    # All BLANK by default → Razorpay is DISABLED: /checkout returns 503, and
+    # verify/webhook reject (no secret to check against). Set the three to go live.
+    #   key-id + key-secret → order creation + payment-signature verify.
+    #   webhook-secret      → POST /api/billing/webhook signature verify.
+    key-id: ${RAZORPAY_KEY_ID:}
+    key-secret: ${RAZORPAY_KEY_SECRET:}
+    webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}
 
 # Google OAuth (Gmail readonly ingestion). ABSENT by default → the Gmail feature
 # is disabled gracefully (endpoints return 503); the app still starts. Set all

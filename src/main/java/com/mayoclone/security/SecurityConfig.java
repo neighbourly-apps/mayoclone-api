@@ -40,11 +40,14 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtService jwtService;
+    private final SubscriptionEnforcementFilter subscriptionEnforcementFilter;
     private final String corsOrigins;
 
     public SecurityConfig(JwtService jwtService,
+                          SubscriptionEnforcementFilter subscriptionEnforcementFilter,
                           @Value("${mayoclone.cors.origins:http://localhost:5173}") String corsOrigins) {
         this.jwtService = jwtService;
+        this.subscriptionEnforcementFilter = subscriptionEnforcementFilter;
         this.corsOrigins = corsOrigins;
     }
 
@@ -97,6 +100,9 @@ public class SecurityConfig {
                                 "/api/auth/refresh", "/api/auth/logout",
                                 "/api/auth/otp/send", "/api/auth/otp/verify").permitAll()
                         .requestMatchers("/api/inbound/**").permitAll()
+                        // Razorpay server webhook: PUBLIC route, authenticated by its
+                        // X-Razorpay-Signature (verified in BillingService).
+                        .requestMatchers(HttpMethod.POST, "/api/billing/webhook").permitAll()
                         .requestMatchers("/api/demo/**").permitAll()
                         // STOMP/SockJS handshake is public; the CONNECT frame is JWT-authed
                         // by StompAuthChannelInterceptor (rejects a missing/invalid token).
@@ -116,9 +122,12 @@ public class SecurityConfig {
                         // --- Everything else under /api requires a valid bearer token ---
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll())
-                // Filter order: rate limit -> CSRF -> JWT -> (framework auth)
+                // Filter order: rate limit -> CSRF -> JWT -> billing gate -> (framework auth)
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService),
                         UsernamePasswordAuthenticationFilter.class)
+                // The billing gate runs right after JWT auth so it sees the principal;
+                // it 402s expired accounts on protected /api/** calls (config-gated).
+                .addFilterAfter(subscriptionEnforcementFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(new DoubleSubmitCsrfFilter(), JwtAuthenticationFilter.class)
                 .addFilterBefore(new RateLimitFilter(), DoubleSubmitCsrfFilter.class);
 

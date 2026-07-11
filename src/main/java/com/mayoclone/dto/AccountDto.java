@@ -17,7 +17,10 @@ public record AccountDto(
         String addressLine,
         String phone,
         boolean emailVerified,
-        Instant createdAt
+        Instant createdAt,
+        String subscriptionStatus,
+        Instant trialEndsAt,
+        Instant currentPeriodEnd
 ) {
 
     public static AccountDto from(Account a) {
@@ -33,7 +36,10 @@ public record AccountDto(
                 a.getAddressLine(),
                 a.getPhone(),
                 a.isEmailVerified(),
-                a.getCreatedAt()
+                a.getCreatedAt(),
+                a.getSubscriptionStatus() == null ? null : a.getSubscriptionStatus().name(),
+                a.getTrialEndsAt(),
+                a.getCurrentPeriodEnd()
         );
     }
 }

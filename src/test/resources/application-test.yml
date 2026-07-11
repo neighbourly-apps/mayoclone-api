@@ -53,3 +53,21 @@ mayoclone:
     # Deterministic Mailgun webhook signing key for tests. The Mailgun webhook test
     # signs with the MailgunSignatureVerifier bean, so it just needs to be present.
     signing-key: test-mailgun-signing-key-0123456789
+  billing:
+    # Gate OFF by default so the existing suites (which hit /api/** with fresh trial
+    # accounts) are unaffected; the enforcement test flips this on via @SpringBootTest
+    # properties. dev-mode ON so the dev-activate flow is testable without Razorpay.
+    enforce: false
+    dev-mode: true
+    plan:
+      code: pro-monthly
+      name: MayoClone Pro
+      amount: 99900
+      currency: INR
+      period-days: 30
+  razorpay:
+    # key-id BLANK → checkout returns 503 (unconfigured). key-secret + webhook-secret
+    # are set so the verify/webhook signature tests can compute a matching HMAC.
+    key-id: ""
+    key-secret: test-razorpay-key-secret-0123456789
+    webhook-secret: test-razorpay-webhook-secret-0123456789

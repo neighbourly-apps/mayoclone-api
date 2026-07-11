@@ -2,6 +2,8 @@ package com.mayoclone.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -72,6 +74,25 @@ public class Account {
 
     @Column(nullable = false)
     private Instant createdAt;
+
+    // --- Billing / subscription (V14) ------------------------------------------
+
+    /** Trial/paid lifecycle, stored as a string. Defaults to TRIALING on a new row. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "subscription_status", nullable = false, length = 16)
+    private SubscriptionStatus subscriptionStatus = SubscriptionStatus.TRIALING;
+
+    /** When the 14-day free trial lapses (set on register). */
+    @Column(name = "trial_ends_at")
+    private Instant trialEndsAt;
+
+    /** End of the current PAID period; extended on each successful payment. */
+    @Column(name = "current_period_end")
+    private Instant currentPeriodEnd;
+
+    /** Plan code the account is subscribed to (e.g. {@code pro-monthly}). */
+    @Column(name = "plan", length = 64)
+    private String plan;
 
     public Account() {
     }
@@ -178,6 +199,53 @@ public class Account {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public SubscriptionStatus getSubscriptionStatus() {
+        return subscriptionStatus;
+    }
+
+    public void setSubscriptionStatus(SubscriptionStatus subscriptionStatus) {
+        this.subscriptionStatus = subscriptionStatus;
+    }
+
+    public Instant getTrialEndsAt() {
+        return trialEndsAt;
+    }
+
+    public void setTrialEndsAt(Instant trialEndsAt) {
+        this.trialEndsAt = trialEndsAt;
+    }
+
+    public Instant getCurrentPeriodEnd() {
+        return currentPeriodEnd;
+    }
+
+    public void setCurrentPeriodEnd(Instant currentPeriodEnd) {
+        this.currentPeriodEnd = currentPeriodEnd;
+    }
+
+    public String getPlan() {
+        return plan;
+    }
+
+    public void setPlan(String plan) {
+        this.plan = plan;
+    }
+
+    /**
+     * Whether the account currently has access: either a live PAID period
+     * (ACTIVE with a future {@code currentPeriodEnd}) OR a live free trial
+     * (TRIALING with a future {@code trialEndsAt}). Computed on the fly, so an
+     * un-swept expired trial still evaluates as inactive.
+     */
+    public boolean isSubscriptionActive(Instant now) {
+        if (subscriptionStatus == SubscriptionStatus.ACTIVE
+                && currentPeriodEnd != null && currentPeriodEnd.isAfter(now)) {
+            return true;
+        }
+        return subscriptionStatus == SubscriptionStatus.TRIALING
+                && trialEndsAt != null && trialEndsAt.isAfter(now);
     }
 
     /** NEVER leak the password hash. */

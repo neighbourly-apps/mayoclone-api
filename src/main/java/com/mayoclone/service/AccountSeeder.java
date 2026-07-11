@@ -50,6 +50,11 @@ public class AccountSeeder implements CommandLineRunner {
         a.setRole(Account.ROLE_ADMIN); // demo account is ADMIN so it can also manage aggregators
         a.setStatus(Account.STATUS_ACTIVE);
         a.setCreatedAt(Instant.now());
+        // Grandfather the seeded demo tenant: ACTIVE with a 10-year runway so the
+        // billing gate never locks it out (mirrors the V14 grandfathering UPDATE).
+        a.setSubscriptionStatus(com.mayoclone.domain.SubscriptionStatus.ACTIVE);
+        a.setCurrentPeriodEnd(Instant.now().plus(3650, java.time.temporal.ChronoUnit.DAYS));
+        a.setPlan("pro-monthly");
         accountRepo.save(a);
         log.info("Seeded demo account {}", DEMO_EMAIL);
     }

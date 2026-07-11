@@ -38,6 +38,10 @@ public class AuthService {
     private final AuditService auditService;
     private final AppMetrics metrics;
     private final boolean requireEmailOtp;
+    private final String defaultPlanCode;
+
+    /** Length of the free trial handed to a newly-registered account. */
+    private static final int TRIAL_DAYS = 14;
 
     /** A throwaway hash so login timing is similar whether or not the email exists. */
     private final String dummyHash;
@@ -49,7 +53,9 @@ public class AuthService {
                        AuditService auditService,
                        AppMetrics metrics,
                        @org.springframework.beans.factory.annotation.Value(
-                               "${mayoclone.auth.require-email-otp:false}") boolean requireEmailOtp) {
+                               "${mayoclone.auth.require-email-otp:false}") boolean requireEmailOtp,
+                       @org.springframework.beans.factory.annotation.Value(
+                               "${mayoclone.billing.plan.code:pro-monthly}") String defaultPlanCode) {
         this.accountRepo = accountRepo;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -57,6 +63,7 @@ public class AuthService {
         this.auditService = auditService;
         this.metrics = metrics;
         this.requireEmailOtp = requireEmailOtp;
+        this.defaultPlanCode = defaultPlanCode;
         this.dummyHash = passwordEncoder.encode("timing-equalizer-" + RANDOM.nextLong());
     }
 
@@ -99,7 +106,13 @@ public class AuthService {
         a.setRole(Account.ROLE_OWNER);
         a.setStatus(Account.STATUS_ACTIVE);
         a.setEmailVerified(emailVerified);
-        a.setCreatedAt(Instant.now());
+        Instant now = Instant.now();
+        a.setCreatedAt(now);
+        // Start the 14-day free trial; no paid period yet.
+        a.setSubscriptionStatus(com.mayoclone.domain.SubscriptionStatus.TRIALING);
+        a.setTrialEndsAt(now.plus(TRIAL_DAYS, java.time.temporal.ChronoUnit.DAYS));
+        a.setCurrentPeriodEnd(null);
+        a.setPlan(defaultPlanCode);
         a = accountRepo.save(a);
 
         auditService.record(a.getId(), a.getEmail(), "auth.register", "account", String.valueOf(a.getId()));
