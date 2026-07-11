@@ -53,6 +53,18 @@ public interface VendorRepository extends JpaRepository<Vendor, Long> {
 
     boolean existsByIdAndAccountId(Long id, Long accountId);
 
+    // ---- Platform super-admin: cross-tenant counts ----
+
+    /** Vendor/mailbox count for one account (admin detail view). */
+    long countByAccountId(Long accountId);
+
+    /**
+     * Batched vendor count per account for the admin list view (avoids N+1).
+     * Each row is {@code [accountId(Long), count(Long)]}.
+     */
+    @Query("select v.accountId, count(v) from Vendor v where v.accountId in :ids group by v.accountId")
+    List<Object[]> countByAccountIds(@Param("ids") List<Long> ids);
+
     // ---- Inbound webhook: resolve a FORWARDING vendor by its minted address ----
 
     Optional<Vendor> findByIngestAddress(String ingestAddress);

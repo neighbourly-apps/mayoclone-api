@@ -23,8 +23,10 @@ import java.time.Instant;
  * {@code {"error":"subscription_required"}}.
  *
  * <p>Disabled entirely when {@code mayoclone.billing.enforce=false}. Exempt paths
- * ({@code /api/auth/**}, {@code /api/billing/**}, {@code /actuator/**}) always pass
- * so a locked-out user can still log in/out, view status, and pay.
+ * ({@code /api/auth/**}, {@code /api/billing/**}, {@code /api/admin/**},
+ * {@code /actuator/**}) always pass so a locked-out user can still log in/out, view
+ * status, and pay. Additionally, any principal whose role is {@code SUPER_ADMIN}
+ * (the platform operator) is exempt on every route.
  */
 @Component
 public class SubscriptionEnforcementFilter extends OncePerRequestFilter {
@@ -50,6 +52,11 @@ public class SubscriptionEnforcementFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
+        // Platform super-admin is NEVER gated by a tenant paywall.
+        if (Account.ROLE_SUPER_ADMIN.equals(p.role())) {
+            chain.doFilter(request, response);
+            return;
+        }
         Account account = accountRepo.findById(p.id()).orElse(null);
         if (account != null && !account.isSubscriptionActive(Instant.now())) {
             response.setStatus(HttpServletResponse.SC_PAYMENT_REQUIRED); // 402
@@ -68,6 +75,7 @@ public class SubscriptionEnforcementFilter extends OncePerRequestFilter {
         }
         return !(path.startsWith("/api/auth/")
                 || path.startsWith("/api/billing/")
+                || path.startsWith("/api/admin/")
                 || path.startsWith("/actuator/"));
     }
 }

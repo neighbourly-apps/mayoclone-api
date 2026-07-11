@@ -26,6 +26,10 @@ public class AccountSeeder implements CommandLineRunner {
     public static final String DEMO_EMAIL = "demo@mayoclone.local";
     public static final String DEMO_PASSWORD = "demo-password-1"; // dev-only, min 10 chars
 
+    /** Platform super-admin: sees EVERY tenant, never subscription-gated. */
+    public static final String SUPERADMIN_EMAIL = "superadmin@mayoclone.local";
+    public static final String SUPERADMIN_PASSWORD = "superadmin123"; // dev-only
+
     private static final Logger log = LoggerFactory.getLogger(AccountSeeder.class);
 
     private final AccountRepository accountRepo;
@@ -38,6 +42,7 @@ public class AccountSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
+        seedSuperAdmin();
         if (accountRepo.existsByEmailIgnoreCase(DEMO_EMAIL)) {
             return;
         }
@@ -57,5 +62,29 @@ public class AccountSeeder implements CommandLineRunner {
         a.setPlan("pro-monthly");
         accountRepo.save(a);
         log.info("Seeded demo account {}", DEMO_EMAIL);
+    }
+
+    /**
+     * Ensures the platform super-admin exists. ACTIVE with a 100-year runway so the
+     * billing gate never locks it out (belt-and-braces alongside the filter's
+     * SUPER_ADMIN exemption). Only created when absent, so operator edits stick.
+     */
+    private void seedSuperAdmin() {
+        if (accountRepo.existsByEmailIgnoreCase(SUPERADMIN_EMAIL)) {
+            return;
+        }
+        Account a = new Account();
+        a.setBusinessName("Platform Super Admin");
+        a.setEmail(SUPERADMIN_EMAIL);
+        a.setPasswordHash(passwordEncoder.encode(SUPERADMIN_PASSWORD));
+        a.setRole(Account.ROLE_SUPER_ADMIN);
+        a.setStatus(Account.STATUS_ACTIVE);
+        a.setEmailVerified(true);
+        a.setCreatedAt(Instant.now());
+        a.setSubscriptionStatus(com.mayoclone.domain.SubscriptionStatus.ACTIVE);
+        a.setCurrentPeriodEnd(Instant.now().plus(36500, java.time.temporal.ChronoUnit.DAYS));
+        a.setPlan("platform");
+        accountRepo.save(a);
+        log.info("Seeded platform super-admin {}", SUPERADMIN_EMAIL);
     }
 }

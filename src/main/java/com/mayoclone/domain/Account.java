@@ -27,6 +27,12 @@ public class Account {
     /** Role values, stored as strings. */
     public static final String ROLE_OWNER = "OWNER";
     public static final String ROLE_ADMIN = "ADMIN";
+    /**
+     * Platform operator. Crosses tenant isolation: sees EVERY account and is never
+     * gated by the per-tenant subscription paywall. JWT authority is
+     * {@code ROLE_SUPER_ADMIN}.
+     */
+    public static final String ROLE_SUPER_ADMIN = "SUPER_ADMIN";
 
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_DISABLED = "DISABLED";

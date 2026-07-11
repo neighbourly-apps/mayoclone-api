@@ -58,6 +58,18 @@ public interface IrctcOrderRepository extends JpaRepository<IrctcOrder, Long> {
      */
     List<IrctcOrder> findByAccountIdAndDeliveryDateBetween(Long accountId, LocalDate from, LocalDate to);
 
+    // ---- Platform super-admin: cross-tenant counts ----
+
+    /** Order count for one account (admin detail view). */
+    long countByAccountId(Long accountId);
+
+    /**
+     * Batched order count per account for the admin list view (avoids N+1).
+     * Each row is {@code [accountId(Long), count(Long)]}.
+     */
+    @Query("select o.accountId, count(o) from IrctcOrder o where o.accountId in :ids group by o.accountId")
+    List<Object[]> countByAccountIds(@Param("ids") List<Long> ids);
+
     // ---- Dedup (global: an aggregator's external order id is globally unique) ----
 
     boolean existsBySourceMessageId(String sourceMessageId);

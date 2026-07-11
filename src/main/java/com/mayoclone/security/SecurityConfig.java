@@ -114,6 +114,8 @@ public class SecurityConfig {
                         // Public read of uploaded menu photos (non-sensitive). The
                         // POST /api/uploads/image stays authenticated via /api/**.
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+                        // --- Platform super-admin: cross-tenant, sees ALL accounts ---
+                        .requestMatchers("/api/admin/**").hasRole("SUPER_ADMIN")
                         // --- Aggregator: read = any authenticated; write = ADMIN ---
                         .requestMatchers(HttpMethod.GET, "/api/aggregators/**").authenticated()
                         .requestMatchers(HttpMethod.POST, "/api/aggregators/**").hasRole("ADMIN")
