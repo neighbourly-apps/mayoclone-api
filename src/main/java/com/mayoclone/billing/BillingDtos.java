@@ -16,6 +16,15 @@ public final class BillingDtos {
     }
 
     /**
+     * GET /api/billing/invoices row — one past payment shown to the customer.
+     * {@code description} is a best-effort plan name (matched on amount), {@code number}
+     * a stable human-readable invoice id, {@code reference} the provider payment id.
+     */
+    public record InvoiceDto(String number, Instant date, long amount, String currency,
+                             String provider, String reference, String description) {
+    }
+
+    /**
      * GET /api/billing/status response.
      *
      * <p>{@code plan} is the account's CURRENT plan (resolved from its stored plan

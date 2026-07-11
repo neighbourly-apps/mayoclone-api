@@ -4,6 +4,7 @@ import com.mayoclone.billing.BillingDtos.BillingStatus;
 import com.mayoclone.billing.BillingDtos.CheckoutRequest;
 import com.mayoclone.billing.BillingDtos.CheckoutResponse;
 import com.mayoclone.billing.BillingDtos.DevActivateRequest;
+import com.mayoclone.billing.BillingDtos.InvoiceDto;
 import com.mayoclone.billing.BillingDtos.VerifyRequest;
 import com.mayoclone.billing.BillingService;
 import com.mayoclone.security.CurrentAccountService;
@@ -44,6 +45,11 @@ public class BillingController {
     @GetMapping("/status")
     public BillingStatus status() {
         return billing.status(currentAccount.accountId());
+    }
+
+    @GetMapping("/invoices")
+    public java.util.List<InvoiceDto> invoices() {
+        return billing.invoices(currentAccount.accountId());
     }
 
     @PostMapping("/checkout")

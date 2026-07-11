@@ -84,6 +84,32 @@ public class BillingService {
                 props.isDevMode());
     }
 
+    // --- invoices (customer-facing payment history) --------------------------
+
+    /** The signed-in account's own payments, newest first, as displayable invoices. */
+    @Transactional(readOnly = true)
+    public List<BillingDtos.InvoiceDto> invoices(Long accountId) {
+        return paymentRepo.findByAccountIdOrderByCreatedAtDesc(accountId).stream()
+                .map(p -> new BillingDtos.InvoiceDto(
+                        "INV-" + String.format("%06d", p.getId()),
+                        p.getCreatedAt(),
+                        p.getAmount(),
+                        p.getCurrency(),
+                        p.getProvider(),
+                        p.getProviderPaymentId(),
+                        describe(p.getAmount())))
+                .toList();
+    }
+
+    /** Best-effort plan name for an amount (matches a configured plan); generic otherwise. */
+    private String describe(long amount) {
+        return props.plans().stream()
+                .filter(pl -> pl.amount() == amount)
+                .map(pl -> pl.name() + " subscription")
+                .findFirst()
+                .orElse("Subscription");
+    }
+
     // --- checkout -------------------------------------------------------------
 
     @Transactional(readOnly = true)

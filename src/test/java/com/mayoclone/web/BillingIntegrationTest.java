@@ -110,6 +110,36 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void invoicesListsPaymentsAfterActivation() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PASSWORD);
+
+        // No payments yet → empty list.
+        mvc.perform(get("/api/billing/invoices")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        // Pay for the annual plan, then the invoice shows up.
+        mvc.perform(post("/api/billing/dev-activate")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"plan\":\"pro-annual\"}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(get("/api/billing/invoices")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].amount").value(1299900))
+                .andExpect(jsonPath("$[0].currency").value("INR"))
+                .andExpect(jsonPath("$[0].description").value("Annual subscription"))
+                .andExpect(jsonPath("$[0].number").exists());
+    }
+
+    @Test
     void devActivateUnknownPlanIsBadRequest() throws Exception {
         String token = registerAndToken(uniqueEmail(), PASSWORD);
         mvc.perform(post("/api/billing/dev-activate")
