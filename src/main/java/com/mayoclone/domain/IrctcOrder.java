@@ -90,6 +90,10 @@ public class IrctcOrder {
     private BigDecimal amount;
     private String currency = "INR";
 
+    /** Cash to collect on delivery (COD); null when the email gave no signal. */
+    @Column(name = "amount_to_collect")
+    private BigDecimal amountToCollect;
+
     /** How the order entered the system (default ONLINE for ingested orders). */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -286,6 +290,14 @@ public class IrctcOrder {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public BigDecimal getAmountToCollect() {
+        return amountToCollect;
+    }
+
+    public void setAmountToCollect(BigDecimal amountToCollect) {
+        this.amountToCollect = amountToCollect;
     }
 
     public OrderType getOrderType() {

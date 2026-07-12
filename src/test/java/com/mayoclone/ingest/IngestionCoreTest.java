@@ -139,6 +139,6 @@ class IngestionCoreTest {
         return new ParsedOrder("ZOOP", "EXT-1", "1234567890", "12951", "Rajdhani",
                 "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
                 null, "13:00-13:30", new BigDecimal("450"), "INR", "CONFIRMED",
-                List.of(), "Order", "<mid@x>");
+                List.of(), "Order", "<mid@x>", "PREPAID", null);
     }
 }

@@ -153,9 +153,12 @@ public class IngestionCore {
         o.setDeliverySlot(p.deliverySlot());
         o.setAmount(p.amount());
         o.setCurrency(p.currency() != null ? p.currency() : "INR");
+        o.setAmountToCollect(p.amountToCollect());
         // Ingested orders are ONLINE; a fresh order enters the lifecycle at NEW.
         o.setOrderType(OrderType.ONLINE);
-        o.setPaymentMode(detectPaymentMode(body));
+        // Prefer the payment mode the parser extracted from the email; fall back to
+        // the body-text heuristic only when the parser found no explicit signal.
+        o.setPaymentMode(resolvePaymentMode(p.paymentMode(), body));
         o.setStatus(OrderStatus.NEW);
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
@@ -163,6 +166,21 @@ public class IngestionCore {
         o.setPlacedAt(Instant.now());
         o.setCreatedAt(Instant.now());
         return o;
+    }
+
+    /**
+     * Map the parser's payment-mode string onto the persisted enum. "COD" → COD,
+     * "PREPAID"/"PAID" (paid online) → PREPAID; when the parser found no signal,
+     * fall back to the body-text heuristic.
+     */
+    private static PaymentMode resolvePaymentMode(String parsed, String body) {
+        if ("COD".equalsIgnoreCase(parsed)) {
+            return PaymentMode.COD;
+        }
+        if ("PREPAID".equalsIgnoreCase(parsed) || "PAID".equalsIgnoreCase(parsed)) {
+            return PaymentMode.PREPAID;
+        }
+        return detectPaymentMode(body);
     }
 
     /** COD when the email body clearly indicates cash/COD payment, else PREPAID. */

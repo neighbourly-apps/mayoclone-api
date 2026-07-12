@@ -27,6 +27,10 @@ public record ParsedOrder(
         String status,
         List<OrderItem> items,
         String subject,
-        String sourceMessageId
+        String sourceMessageId,
+        /** "COD" | "PREPAID" | "PAID" | null when the email gives no signal. */
+        String paymentMode,
+        /** Cash to collect on delivery (₹0 for fully-prepaid); null when unknown. */
+        BigDecimal amountToCollect
 ) {
 }
