@@ -21,3 +21,21 @@ data:
   # Tracing: disabled by default; set sampling > 0 and point at a collector.
   MAYOCLONE_TRACING_SAMPLING: "0.0"
   MAYOCLONE_OTLP_ENDPOINT: "http://otel-collector.observability:4318/v1/traces"
+  # OTP: never return the plaintext devCode in prod.
+  MAYOCLONE_OTP_DEV_MODE: "false"
+  # Billing gate: enforce on, dev-activate off. Razorpay secrets live in the
+  # Secret; setting all three there flips checkout from 503 → live.
+  MAYOCLONE_BILLING_ENFORCE: "true"
+  MAYOCLONE_BILLING_DEV_MODE: "false"
+  # Plan defaults (amounts in PAISE; codes pro-monthly/pro-annual are fixed).
+  # Override only if changing prices. ₹1200/mo, ₹12999/yr.
+  MAYOCLONE_BILLING_DEFAULT_PLAN: "pro-monthly"
+  MAYOCLONE_PLAN_MONTHLY_AMOUNT: "120000"
+  MAYOCLONE_PLAN_ANNUAL_AMOUNT: "1299900"
+  # Email / SMTP: setting SPRING_MAIL_HOST flips OTP + renewal-reminder emails
+  # from the dev logger to real sending. Username/password are Secrets.
+  SPRING_MAIL_HOST: "smtp.example.com"
+  SPRING_MAIL_PORT: "587"
+  SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+  SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+  MAYOCLONE_OTP_FROM: "no-reply@mayoclone.example.com"

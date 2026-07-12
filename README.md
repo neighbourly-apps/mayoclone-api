@@ -39,8 +39,11 @@ dashboard and **printable invoices**.
   Zoop-specific patterns. Parsing degrades gracefully with sensible defaults.
 - **Dedup** happens twice: on `sourceMessageId`, and on the unique
   `(aggregator_id, externalOrderId)` constraint.
-- **Scheduling**: `PollScheduler` sweeps active vendors on a fixed delay, but is
-  **disabled by default** (`mayoclone.poll.enabled=false`).
+- **Scheduling**: mailbox polling runs on a **durable job queue** —
+  `MailboxPollDispatcher` enqueues one `MAILBOX_SYNC` job per due vendor each
+  dispatch tick and a bounded worker pool syncs them in parallel (a Postgres
+  advisory lock keeps one dispatcher per tick). It is **disabled by default**
+  (`mayoclone.poll.enabled=false`); the forwarding webhook + Gmail push still work.
 
 ## Domain
 

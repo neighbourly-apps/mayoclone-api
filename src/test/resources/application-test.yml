@@ -43,6 +43,15 @@ mayoclone:
     origins: http://localhost:5173
   cookie:
     secure: false
+  auth:
+    # application.yml now defaults otp-dev-mode to FALSE (prod-safe). The suites read
+    # the plaintext devCode from /otp/send, so force it back on for tests.
+    otp-dev-mode: true
+  ratelimit:
+    # Tests isolate their per-IP rate buckets via a synthetic X-Forwarded-For header,
+    # so the limiter must trust XFF in the test profile (prod default is false → the
+    # socket peer is used). With a single XFF value the last hop == that value.
+    trust-forwarded-for: true
   inbound:
     # Deterministic inbound-webhook HMAC secret + domain for tests. The webhook
     # tests sign with the InboundSignatureVerifier bean, so no test needs to know

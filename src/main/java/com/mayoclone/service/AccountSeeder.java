@@ -4,8 +4,10 @@ import com.mayoclone.domain.Account;
 import com.mayoclone.repository.AccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -26,7 +28,13 @@ public class AccountSeeder implements CommandLineRunner {
     public static final String DEMO_EMAIL = "demo@mayoclone.local";
     public static final String DEMO_PASSWORD = "demo-password-1"; // dev-only, min 10 chars
 
-    /** Platform super-admin: sees EVERY tenant, never subscription-gated. */
+    /**
+     * Platform super-admin: sees EVERY tenant, never subscription-gated. These are
+     * the NON-PROD (dev/test) convenience defaults ONLY. Under the {@code prod}
+     * profile the credentials MUST come from {@code MAYOCLONE_SUPERADMIN_EMAIL} /
+     * {@code MAYOCLONE_SUPERADMIN_PASSWORD} — otherwise the super-admin is NOT
+     * seeded (we never ship a known-credential admin to production).
+     */
     public static final String SUPERADMIN_EMAIL = "superadmin@mayoclone.local";
     public static final String SUPERADMIN_PASSWORD = "superadmin123"; // dev-only
 
@@ -34,10 +42,20 @@ public class AccountSeeder implements CommandLineRunner {
 
     private final AccountRepository accountRepo;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
+    private final String superAdminEmailEnv;
+    private final String superAdminPasswordEnv;
 
-    public AccountSeeder(AccountRepository accountRepo, PasswordEncoder passwordEncoder) {
+    public AccountSeeder(AccountRepository accountRepo,
+                         PasswordEncoder passwordEncoder,
+                         Environment environment,
+                         @Value("${MAYOCLONE_SUPERADMIN_EMAIL:}") String superAdminEmailEnv,
+                         @Value("${MAYOCLONE_SUPERADMIN_PASSWORD:}") String superAdminPasswordEnv) {
         this.accountRepo = accountRepo;
         this.passwordEncoder = passwordEncoder;
+        this.environment = environment;
+        this.superAdminEmailEnv = superAdminEmailEnv;
+        this.superAdminPasswordEnv = superAdminPasswordEnv;
     }
 
     @Override
@@ -68,15 +86,44 @@ public class AccountSeeder implements CommandLineRunner {
      * Ensures the platform super-admin exists. ACTIVE with a 100-year runway so the
      * billing gate never locks it out (belt-and-braces alongside the filter's
      * SUPER_ADMIN exemption). Only created when absent, so operator edits stick.
+     *
+     * <p>Credentials: {@code MAYOCLONE_SUPERADMIN_EMAIL} / {@code
+     * MAYOCLONE_SUPERADMIN_PASSWORD} when set. Under the {@code prod} profile BOTH
+     * must be provided — otherwise the seed is SKIPPED (never create a known-default
+     * admin in production). In non-prod the built-in dev defaults are used so the
+     * demo and test suites are unchanged.
      */
     private void seedSuperAdmin() {
-        if (accountRepo.existsByEmailIgnoreCase(SUPERADMIN_EMAIL)) {
+        boolean prod = environment.acceptsProfiles(
+                org.springframework.core.env.Profiles.of("prod"));
+
+        String email = superAdminEmailEnv == null ? "" : superAdminEmailEnv.trim();
+        String password = superAdminPasswordEnv == null ? "" : superAdminPasswordEnv;
+
+        if (prod) {
+            if (email.isEmpty() || password.isEmpty()) {
+                log.warn("Super-admin NOT seeded under the 'prod' profile: set BOTH "
+                        + "MAYOCLONE_SUPERADMIN_EMAIL and MAYOCLONE_SUPERADMIN_PASSWORD to seed one. "
+                        + "Refusing to create a default-credential platform admin.");
+                return;
+            }
+        } else {
+            // Dev/test convenience: fall back to the built-in defaults.
+            if (email.isEmpty()) {
+                email = SUPERADMIN_EMAIL;
+            }
+            if (password.isEmpty()) {
+                password = SUPERADMIN_PASSWORD;
+            }
+        }
+
+        if (accountRepo.existsByEmailIgnoreCase(email)) {
             return;
         }
         Account a = new Account();
         a.setBusinessName("Platform Super Admin");
-        a.setEmail(SUPERADMIN_EMAIL);
-        a.setPasswordHash(passwordEncoder.encode(SUPERADMIN_PASSWORD));
+        a.setEmail(email);
+        a.setPasswordHash(passwordEncoder.encode(password));
         a.setRole(Account.ROLE_SUPER_ADMIN);
         a.setStatus(Account.STATUS_ACTIVE);
         a.setEmailVerified(true);
@@ -85,6 +132,6 @@ public class AccountSeeder implements CommandLineRunner {
         a.setCurrentPeriodEnd(Instant.now().plus(36500, java.time.temporal.ChronoUnit.DAYS));
         a.setPlan("platform");
         accountRepo.save(a);
-        log.info("Seeded platform super-admin {}", SUPERADMIN_EMAIL);
+        log.info("Seeded platform super-admin {}", email);
     }
 }

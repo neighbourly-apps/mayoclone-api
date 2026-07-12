@@ -26,11 +26,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * On exhaustion returns 429 with a {@code Retry-After} header (seconds). Buckets
  * are per JVM instance; a distributed deployment would back this with Redis.
+ *
+ * <p>Client-IP resolution is anti-spoofing aware. When {@code trustForwardedFor}
+ * is false (default) the socket peer ({@link HttpServletRequest#getRemoteAddr()})
+ * is the bucket key — a forged {@code X-Forwarded-For} cannot rotate it. When true
+ * (only behind a trusted proxy/LB that appends the real client IP) the LAST,
+ * proxy-appended XFF hop is used — never the leftmost, client-controlled value.
  */
 public class RateLimitFilter extends OncePerRequestFilter {
 
     private final ConcurrentHashMap<String, Bucket> authBuckets = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> globalBuckets = new ConcurrentHashMap<>();
+
+    private final boolean trustForwardedFor;
+
+    public RateLimitFilter(boolean trustForwardedFor) {
+        this.trustForwardedFor = trustForwardedFor;
+    }
 
     private static Bucket authBucket() {
         return Bucket.builder()
@@ -86,10 +98,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            return forwarded.split(",")[0].trim();
+        if (trustForwardedFor) {
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (forwarded != null && !forwarded.isBlank()) {
+                // Use the LAST hop: the entry appended by the closest trusted proxy
+                // (the IP that actually connected to it). The leftmost value is
+                // supplied by the client and is spoofable, so it is never used.
+                String[] hops = forwarded.split(",");
+                String last = hops[hops.length - 1].trim();
+                if (!last.isEmpty()) {
+                    return last;
+                }
+            }
         }
+        // Untrusted network (or no XFF): key on the real socket peer, which a
+        // client cannot forge.
         return request.getRemoteAddr();
     }
 }

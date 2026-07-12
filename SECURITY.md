@@ -101,6 +101,32 @@ with credentialed CORS and must not be used.
 - Rotation procedures (JWT secret, encryption key with re-encrypt, inbound
   signing secret, DB creds) are in [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
+## Data handling & PII
+
+MayoClone processes personal data from IRCTC e-catering order emails —
+**passenger names, phone numbers, PNRs**, delivery stations/slots, and order
+line items — plus **vendor mailbox credentials**. Handling principles:
+
+- **Mailbox credentials encrypted at rest**: IMAP passwords and Gmail OAuth
+  refresh tokens are **AES-256-GCM encrypted** in their columns (see the *Secret
+  handling & rotation* table above and `AesGcmStringConverter`); they are never
+  returned in any API DTO.
+- **Read-only mailbox access**: ingestion only *reads* mail. IMAP is opened
+  read-only and fetches by UID (never sets `\Seen`), and Gmail uses the
+  **`gmail.readonly`** scope — MayoClone never sends, deletes, or modifies a
+  vendor's mail. The forwarding-webhook path stores **no** mailbox credentials at
+  all and is the preferred, least-privilege option.
+- **Data minimization**: only the IRCTC fields needed to fulfil and invoice an
+  order are parsed and stored; raw email bodies are not retained as a durable
+  store beyond what ingestion needs. Passenger PII is used solely to service the
+  vendor's own orders.
+- **Tenant isolation**: all passenger/order data is scoped by `accountId` from
+  the JWT (never client-supplied); cross-tenant access returns 404 (see
+  *Authorization & tenancy*).
+- **Audit & retention**: security-relevant actions are recorded in the immutable
+  `audit_log`; PostgreSQL is the single durable store and should be backed up and
+  access-controlled accordingly (see [`docs/RUNBOOK.md`](docs/RUNBOOK.md)).
+
 ## Ingestion trust models
 
 MayoClone supports three ways for a vendor's aggregator email to reach it, in

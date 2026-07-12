@@ -55,7 +55,7 @@ unified, per-tenant order feed with printable GST invoices.
 | **Security** | `SecurityConfig`, `JwtService`, `JwtAuthenticationFilter`, `DoubleSubmitCsrfFilter`, `RateLimitFilter`, `AuthCookieFactory`, `CurrentAccountService`, `crypto/AesGcmStringConverter` | Stateless auth, CSRF, rate limit, column encryption |
 | **Ingestion** | `ingest/MailSource` (+ `MailSourceRegistry`), `ImapMailSource`, `gmail/GmailMailSource`, `inbound/InboundSignatureVerifier`, `IngestionCore`, `RawMessage` | Fetch/receive mail, verify, route, dedup |
 | **Parsing** | `parser/IrctcEmailParser`, `GenericIrctcEmailParser`, `ZoopEmailParser`, `ParsedOrder` | Extract IRCTC fields from the email body |
-| **Services** | `OrderService`, `VendorService`, `AggregatorService`, `AuthService`, `RefreshTokenService`, `IngestFailureService`, `GmailOAuthService`, `AuditService`, `AggregatorSeeder`, `AccountSeeder`, `PollScheduler` | Business logic, tenant scoping |
+| **Services** | `OrderService`, `VendorService`, `AggregatorService`, `AuthService`, `RefreshTokenService`, `IngestFailureService`, `GmailOAuthService`, `AuditService`, `AggregatorSeeder`, `AccountSeeder`, `MailboxPollDispatcher` (+ durable job queue) | Business logic, tenant scoping |
 | **Observability** | `observability/AppMetrics`, `CorrelationIdFilter` | Micrometer meters, `X-Request-Id` correlation |
 | **Persistence** | `domain/*`, `repository/*`, Flyway `db/migration/V1..V4` | Entities + schema |
 
@@ -103,7 +103,8 @@ Cross-tenant access returns 404. See [`../SECURITY.md`](../SECURITY.md).
 
 ## Scheduling
 
-`PollScheduler` can sweep active IMAP/Gmail vendors on a fixed delay, but is
-**disabled by default** (`mayoclone.poll.enabled=false`). On-demand sync is via
-`POST /api/vendors/{id}/sync` or `POST /api/sync`. The FORWARDING path needs no
-polling — it is event-driven by the provider webhook.
+`MailboxPollDispatcher` can sweep active IMAP/Gmail vendors by enqueuing
+`MAILBOX_SYNC` jobs onto the durable job queue (worker pool syncs them in
+parallel), but is **disabled by default** (`mayoclone.poll.enabled=false`).
+On-demand sync is via `POST /api/vendors/{id}/sync` or `POST /api/sync`. The
+FORWARDING path needs no polling — it is event-driven by the provider webhook.

@@ -42,13 +42,16 @@ public class SecurityConfig {
     private final JwtService jwtService;
     private final SubscriptionEnforcementFilter subscriptionEnforcementFilter;
     private final String corsOrigins;
+    private final boolean trustForwardedFor;
 
     public SecurityConfig(JwtService jwtService,
                           SubscriptionEnforcementFilter subscriptionEnforcementFilter,
-                          @Value("${mayoclone.cors.origins:http://localhost:5173}") String corsOrigins) {
+                          @Value("${mayoclone.cors.origins:http://localhost:5173}") String corsOrigins,
+                          @Value("${mayoclone.ratelimit.trust-forwarded-for:false}") boolean trustForwardedFor) {
         this.jwtService = jwtService;
         this.subscriptionEnforcementFilter = subscriptionEnforcementFilter;
         this.corsOrigins = corsOrigins;
+        this.trustForwardedFor = trustForwardedFor;
     }
 
     /** Argon2id password hashing (Spring Security 5.8+ defaults; needs BouncyCastle). */
@@ -111,6 +114,10 @@ public class SecurityConfig {
                         // validated in the handler to recover the account. /connect stays authenticated.
                         .requestMatchers(HttpMethod.GET, "/api/mail/gmail/callback").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Prometheus scrape endpoint: permit so the k8s ServiceMonitor
+                        // can pull metrics. /actuator/metrics and any other actuator
+                        // endpoints remain locked down (fall through to denyAll).
+                        .requestMatchers("/actuator/prometheus").permitAll()
                         // Public read of uploaded menu photos (non-sensitive). The
                         // POST /api/uploads/image stays authenticated via /api/**.
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
@@ -131,7 +138,7 @@ public class SecurityConfig {
                 // it 402s expired accounts on protected /api/** calls (config-gated).
                 .addFilterAfter(subscriptionEnforcementFilter, JwtAuthenticationFilter.class)
                 .addFilterBefore(new DoubleSubmitCsrfFilter(), JwtAuthenticationFilter.class)
-                .addFilterBefore(new RateLimitFilter(), DoubleSubmitCsrfFilter.class);
+                .addFilterBefore(new RateLimitFilter(trustForwardedFor), DoubleSubmitCsrfFilter.class);
 
         return http.build();
     }

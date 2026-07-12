@@ -11,6 +11,17 @@ spring:
     username: ${MAYOCLONE_DB_USER:mayoclone}
     password: ${MAYOCLONE_DB_PASSWORD:mayoclone}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Pool sizing: the app contends for connections across the web thread pool,
+      # 8 job-worker threads (mayoclone.jobs.concurrency), the reminder/watch/poll
+      # schedulers, and the crash-recovery reaper. The Hikari default of 10 starves
+      # under load. Size for (worker threads + a few scheduler threads + web
+      # concurrency) — default 20 here; raise MAYOCLONE_DB_POOL_MAX for heavier web
+      # traffic and keep Postgres max_connections comfortably above pool_size ×
+      # replicas. connection-timeout fails fast (10s) rather than hanging a request
+      # when the pool is exhausted.
+      maximum-pool-size: ${MAYOCLONE_DB_POOL_MAX:20}
+      connection-timeout: ${MAYOCLONE_DB_CONNECTION_TIMEOUT_MS:10000}
   jpa:
     hibernate:
       # Flyway OWNS the schema. Hibernate only validates that the mapped
@@ -29,6 +40,17 @@ spring:
       # Menu-photo uploads: hard cap at 2MB (enforced again in ImageStorageService).
       max-file-size: 2MB
       max-request-size: 2MB
+  mail:
+    # SMTP socket timeouts (ms). These apply once real SMTP is configured
+    # (spring.mail.host set via env). Without them a wedged/slow MX can hang an
+    # OTP/notification sender thread indefinitely. connectiontimeout=5s to open the
+    # socket; timeout=10s waiting on a read; writetimeout=10s pushing the message.
+    properties:
+      mail:
+        smtp:
+          connectiontimeout: ${MAYOCLONE_SMTP_CONNECT_TIMEOUT_MS:5000}
+          timeout: ${MAYOCLONE_SMTP_READ_TIMEOUT_MS:10000}
+          writetimeout: ${MAYOCLONE_SMTP_WRITE_TIMEOUT_MS:10000}
 
 management:
   endpoints:
@@ -127,7 +149,10 @@ mayoclone:
     #  otp-ttl-seconds: OTP validity window (default 10 minutes).
     #  email-verify-ttl-seconds: TTL of the email_verify JWT minted on verify (15 min).
     require-email-otp: ${MAYOCLONE_REQUIRE_EMAIL_OTP:false}
-    otp-dev-mode: ${MAYOCLONE_OTP_DEV_MODE:true}
+    # Default FALSE (was true): returning the OTP in the response is a verification
+    # bypass. Local dev/tests that want the devCode set MAYOCLONE_OTP_DEV_MODE=true
+    # (the test profile sets it). ProductionSecretGuard also aborts prod if it is true.
+    otp-dev-mode: ${MAYOCLONE_OTP_DEV_MODE:false}
     otp-ttl-seconds: ${MAYOCLONE_OTP_TTL:600}
     email-verify-ttl-seconds: ${MAYOCLONE_EMAIL_VERIFY_TTL:900}
     # From-address for OTP emails (only used when real SMTP is configured).
@@ -143,6 +168,16 @@ mayoclone:
     # refresh/csrf cookies are Secure only over HTTPS. Local dev is http, so default false.
     # Prod MUST set MAYOCLONE_COOKIE_SECURE=true.
     secure: ${MAYOCLONE_COOKIE_SECURE:false}
+  ratelimit:
+    # Whether to trust the X-Forwarded-For header for the rate-limit client key.
+    # DEFAULT FALSE: when the app is directly reachable, a forged XFF would rotate the
+    # bucket key and defeat the login/OTP/global limits, so we key on the socket peer
+    # (request.getRemoteAddr()). Set TRUE only when the app sits behind a TRUSTED
+    # reverse proxy / load balancer that appends the real client IP — then the LAST
+    # (rightmost, proxy-appended) XFF hop is used, never the leftmost client-controlled
+    # value. The test profile sets this true so each test's synthetic XFF isolates its
+    # own per-IP buckets.
+    trust-forwarded-for: ${MAYOCLONE_RATELIMIT_TRUST_XFF:false}
   frontend:
     # SPA base URL used for the Gmail OAuth success redirect.
     base-url: ${MAYOCLONE_FRONTEND_BASE_URL:http://localhost:5173}
