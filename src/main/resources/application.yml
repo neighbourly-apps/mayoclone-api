@@ -115,6 +115,12 @@ mayoclone:
       # When set, POST /api/inbound/gmail/push requires a Google-signed OIDC Bearer
       # JWT whose aud == this value (verified against Google's JWKS). PREFERRED.
       audience: ${MAYOCLONE_GMAIL_PUSH_AUDIENCE:}
+      # Identity pin for the OIDC token: the Google service-account email Pub/Sub push
+      # is configured to sign with. When set, the push token must carry email_verified
+      # == true AND email == this value (so a forged token with the right audience is
+      # rejected). BLANK → identity NOT pinned (a one-time warning is logged). STRONGLY
+      # recommended in prod. Typically <name>@<project>.iam.gserviceaccount.com.
+      service-account: ${MAYOCLONE_GMAIL_PUSH_SERVICE_ACCOUNT:}
       # Fallback shared secret: when set (and no audience), the push endpoint requires
       # a matching ?token= query param (constant-time compare).
       token: ${MAYOCLONE_GMAIL_PUSH_TOKEN:}

@@ -47,7 +47,9 @@ public class GmailOAuthService {
     private final AggregatorRepository aggregatorRepo;
     private final AuditService auditService;
     private final ApplicationEventPublisher events;
-    private final RestClient restClient = RestClient.create();
+    // Timeouts (connect 3s / read 10s) so a wedged Google socket cannot hang the
+    // OAuth callback / token-refresh thread forever. Bare create() has NO timeouts.
+    private final RestClient restClient = com.mayoclone.util.TimeoutRestClients.create();
 
     public GmailOAuthService(GmailOAuthConfig config,
                              OAuthStateSigner stateSigner,

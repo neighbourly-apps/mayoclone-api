@@ -1,8 +1,11 @@
 package com.mayoclone.web;
 
 import com.mayoclone.billing.RazorpaySignature;
+import com.mayoclone.domain.PendingCheckout;
+import com.mayoclone.repository.PendingCheckoutRepository;
 import com.mayoclone.support.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.Instant;
@@ -28,6 +31,9 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
     // Must match src/test/resources/application-test.yml.
     private static final String KEY_SECRET = "test-razorpay-key-secret-0123456789";
     private static final String WEBHOOK_SECRET = "test-razorpay-webhook-secret-0123456789";
+
+    @Autowired
+    private PendingCheckoutRepository pendingRepo;
 
     @Test
     void registerStartsTrialAndStatusReportsIt() throws Exception {
@@ -163,9 +169,12 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void verifyWithValidSignatureActivatesAndExtendsPeriod() throws Exception {
-        String token = registerAndToken(uniqueEmail(), PASSWORD);
+        MvcResult reg = register(uniqueEmail(), PASSWORD);
+        String token = readAccessToken(reg);
+        long accountId = accountIdOf(reg);
         String orderId = "order_TEST123";
         String paymentId = "pay_TEST123";
+        seedPending(orderId, accountId, "pro-monthly", 120000);
         String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
 
         mvc.perform(post("/api/billing/verify")
@@ -176,7 +185,142 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.active").value(true))
+                .andExpect(jsonPath("$.plan.code").value("pro-monthly"))
                 .andExpect(jsonPath("$.currentPeriodEnd").isNotEmpty());
+    }
+
+    /**
+     * FRAUD GUARD: pay for pro-monthly (₹1200) then call /verify with plan=pro-annual.
+     * The bound order (pending_checkout) is authoritative → MONTHLY is granted, ~30 days,
+     * NOT 365. The client-sent plan is ignored.
+     */
+    @Test
+    void verifyGrantsBoundPlanNotClientSentPlan() throws Exception {
+        MvcResult reg = register(uniqueEmail(), PASSWORD);
+        String token = readAccessToken(reg);
+        long accountId = accountIdOf(reg);
+        String orderId = "order_MONTHLY_1";
+        String paymentId = "pay_MONTHLY_1";
+        seedPending(orderId, accountId, "pro-monthly", 120000); // paid for monthly
+        String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
+
+        Instant monthlyUpper = Instant.now().plus(32, ChronoUnit.DAYS);
+
+        MvcResult res = mvc.perform(post("/api/billing/verify")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        // client LIES: claims annual
+                        .content(verifyBody(orderId, paymentId, signature, "pro-annual")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.code").value("pro-monthly")) // bound plan wins
+                .andReturn();
+
+        Map<?, ?> body = json.readValue(res.getResponse().getContentAsString(), Map.class);
+        Instant cpe = Instant.parse((String) body.get("currentPeriodEnd"));
+        org.junit.jupiter.api.Assertions.assertTrue(cpe.isBefore(monthlyUpper),
+                "must grant MONTHLY (~30d), not annual (~365d); was " + cpe);
+
+        // The recorded invoice is the MONTHLY amount, not the annual one.
+        mvc.perform(get("/api/billing/invoices")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].amount").value(120000));
+    }
+
+    /** A verify for an order owned by ANOTHER account is rejected (400). */
+    @Test
+    void verifyRejectsOrderOwnedByAnotherAccount() throws Exception {
+        MvcResult regA = register(uniqueEmail(), PASSWORD);
+        long accountA = accountIdOf(regA);
+
+        String tokenB = registerAndToken(uniqueEmail(), PASSWORD);
+        String orderId = "order_OWNED_BY_A";
+        String paymentId = "pay_X";
+        seedPending(orderId, accountA, "pro-monthly", 120000); // A's order
+        String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
+
+        // B (a different account) tries to claim A's order.
+        mvc.perform(post("/api/billing/verify")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + tokenB)
+                        .contentType(APPLICATION_JSON)
+                        .content(verifyBody(orderId, paymentId, signature)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unknown_order"));
+    }
+
+    /** A verify for an order that was never checked out here is rejected (400). */
+    @Test
+    void verifyRejectsUnknownOrder() throws Exception {
+        String token = registerAndToken(uniqueEmail(), PASSWORD);
+        String orderId = "order_NEVER_SEEN";
+        String paymentId = "pay_Y";
+        String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
+
+        mvc.perform(post("/api/billing/verify")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content(verifyBody(orderId, paymentId, signature)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("unknown_order"));
+    }
+
+    /** Annual checkout verified normally grants ~365 days. */
+    @Test
+    void verifyAnnualOrderGrantsAnnual() throws Exception {
+        MvcResult reg = register(uniqueEmail(), PASSWORD);
+        String token = readAccessToken(reg);
+        long accountId = accountIdOf(reg);
+        String orderId = "order_ANNUAL_1";
+        String paymentId = "pay_ANNUAL_1";
+        seedPending(orderId, accountId, "pro-annual", 1299900);
+        String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
+        Instant lower = Instant.now().plus(363, ChronoUnit.DAYS);
+
+        MvcResult res = mvc.perform(post("/api/billing/verify")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(APPLICATION_JSON)
+                        .content(verifyBody(orderId, paymentId, signature)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.code").value("pro-annual"))
+                .andReturn();
+        Map<?, ?> body = json.readValue(res.getResponse().getContentAsString(), Map.class);
+        Instant cpe = Instant.parse((String) body.get("currentPeriodEnd"));
+        org.junit.jupiter.api.Assertions.assertTrue(cpe.isAfter(lower),
+                "annual should extend ~365d; was " + cpe);
+    }
+
+    /** A replayed verify (same payment id) stays 200 and records the payment once. */
+    @Test
+    void verifyIsIdempotentOnReplay() throws Exception {
+        MvcResult reg = register(uniqueEmail(), PASSWORD);
+        String token = readAccessToken(reg);
+        long accountId = accountIdOf(reg);
+        String orderId = "order_REPLAY_1";
+        String paymentId = "pay_REPLAY_1";
+        seedPending(orderId, accountId, "pro-monthly", 120000);
+        String signature = RazorpaySignature.hmacHex(KEY_SECRET, orderId + "|" + paymentId);
+        String bodyJson = verifyBody(orderId, paymentId, signature);
+
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(post("/api/billing/verify")
+                            .header("X-Forwarded-For", uniqueIp())
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(APPLICATION_JSON)
+                            .content(bodyJson))
+                    .andExpect(status().isOk());
+        }
+
+        mvc.perform(get("/api/billing/invoices")
+                        .header("X-Forwarded-For", uniqueIp())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1)); // recorded once, not twice
     }
 
     @Test
@@ -241,10 +385,28 @@ class BillingIntegrationTest extends AbstractIntegrationTest {
     }
 
     private String verifyBody(String orderId, String paymentId, String signature) throws Exception {
+        return verifyBody(orderId, paymentId, signature, null);
+    }
+
+    private String verifyBody(String orderId, String paymentId, String signature, String plan) throws Exception {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("razorpay_order_id", orderId);
         m.put("razorpay_payment_id", paymentId);
         m.put("razorpay_signature", signature);
+        if (plan != null) {
+            m.put("plan", plan);
+        }
         return writeJson(m);
+    }
+
+    private long accountIdOf(MvcResult reg) throws Exception {
+        Map<?, ?> body = json.readValue(reg.getResponse().getContentAsString(), Map.class);
+        Object id = ((Map<?, ?>) body.get("account")).get("id");
+        return ((Number) id).longValue();
+    }
+
+    /** Seed the server-authoritative checkout binding (checkout is 503 without live keys). */
+    private void seedPending(String orderId, long accountId, String planCode, long amount) {
+        pendingRepo.save(new PendingCheckout(orderId, accountId, planCode, amount, "INR", Instant.now()));
     }
 }

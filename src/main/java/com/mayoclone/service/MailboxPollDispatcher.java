@@ -14,8 +14,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.DatabaseMetaData;
 import java.time.Instant;
@@ -53,6 +55,7 @@ public class MailboxPollDispatcher {
     private final JobQueue jobQueue;
     private final GmailPushProperties pushProps;
     private final JdbcTemplate jdbc;
+    private final TransactionTemplate txTemplate;
     private final AppMetrics metrics;
 
     private final boolean enabled;
@@ -75,6 +78,9 @@ public class MailboxPollDispatcher {
         this.jobQueue = jobQueue;
         this.pushProps = pushProps;
         this.jdbc = jdbc;
+        this.txTemplate = (jdbc != null && jdbc.getDataSource() != null)
+                ? new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()))
+                : null;
         this.metrics = metrics;
         this.enabled = enabled;
         this.intervalMs = intervalMs;
@@ -93,15 +99,19 @@ public class MailboxPollDispatcher {
         if (!enabled) {
             return; // polling disabled — do nothing
         }
-        if (!tryAdvisoryLock()) {
-            return; // another instance is dispatching this tick
-        }
         try {
-            dispatchDue();
+            if (txTemplate != null && isPostgres()) {
+                // Single-dispatcher guard: hold a TRANSACTION-scoped advisory lock for the
+                // whole enqueue, auto-released on commit. (The previous session-scoped
+                // pg_try_advisory_lock was acquired on one pooled connection and released
+                // on another — the lock leaked and was never freed.) This is a
+                // redundant-work optimisation only; the dedupKey guarantees correctness.
+                txTemplate.execute(status -> tryXactLock() ? dispatchDue() : 0);
+            } else {
+                dispatchDue(); // H2/non-Postgres: no cross-instance contention in tests
+            }
         } catch (RuntimeException e) {
             log.warn("Mailbox poll dispatch failed: {}", e.toString());
-        } finally {
-            releaseAdvisoryLock();
         }
     }
 
@@ -148,24 +158,15 @@ public class MailboxPollDispatcher {
 
     // ---------------------------------------------------------- advisory lock
 
-    private boolean tryAdvisoryLock() {
-        if (!isPostgres()) {
-            return true; // H2/non-Postgres: no cross-instance contention in tests
-        }
+    /**
+     * Transaction-scoped advisory lock: acquired on the transaction's connection and
+     * auto-released when that transaction commits/rolls back — no manual unlock, no leak.
+     * Must be called from within the {@link #txTemplate} transaction.
+     */
+    private boolean tryXactLock() {
         Boolean locked = jdbc.queryForObject(
-                "SELECT pg_try_advisory_lock(?)", Boolean.class, ADVISORY_LOCK_KEY);
+                "SELECT pg_try_advisory_xact_lock(?)", Boolean.class, ADVISORY_LOCK_KEY);
         return Boolean.TRUE.equals(locked);
-    }
-
-    private void releaseAdvisoryLock() {
-        if (!isPostgres()) {
-            return;
-        }
-        try {
-            jdbc.queryForObject("SELECT pg_advisory_unlock(?)", Boolean.class, ADVISORY_LOCK_KEY);
-        } catch (RuntimeException e) {
-            log.warn("pg_advisory_unlock failed: {}", e.toString());
-        }
     }
 
     private boolean isPostgres() {

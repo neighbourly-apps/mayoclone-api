@@ -5,8 +5,10 @@ import com.mayoclone.dto.NotificationSettingDto;
 import com.mayoclone.dto.UpdateNotificationSettingRequest;
 import com.mayoclone.repository.NotificationSettingRepository;
 import com.mayoclone.security.CurrentAccountService;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 
@@ -36,6 +38,14 @@ public class NotificationService {
     public NotificationSettingDto update(UpdateNotificationSettingRequest req) {
         NotificationSetting s = getOrCreate(currentAccount.accountId());
         String url = req.webhookUrl() == null || req.webhookUrl().isBlank() ? null : req.webhookUrl().trim();
+        if (url != null) {
+            // SSRF guard: reject a webhook aimed at internal infra (metadata/RFC1918/loopback).
+            try {
+                WebhookUrlGuard.validateForSave(url);
+            } catch (WebhookUrlGuard.InvalidWebhookUrlException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            }
+        }
         s.setWebhookUrl(url);
         s.setOnNewOrder(req.onNewOrder());
         s.setOnAssigned(req.onAssigned());

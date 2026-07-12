@@ -31,7 +31,9 @@ public class GoogleJwksKeyResolver implements JwksKeyResolver {
     private static final long TTL_MS = 60 * 60 * 1000L;
 
     private final String certsUrl;
-    private final RestClient http = RestClient.create();
+    // Timeouts (connect 3s / read 10s) so a wedged JWKS fetch cannot hang the push
+    // verification thread forever. Bare RestClient.create() has NO timeouts.
+    private final RestClient http = com.mayoclone.util.TimeoutRestClients.create();
 
     private final ConcurrentHashMap<String, RSAPublicKey> cache = new ConcurrentHashMap<>();
     private final AtomicLong lastRefresh = new AtomicLong(0);

@@ -159,12 +159,29 @@ public class ImapMailSource implements MailSource {
         long maxUid = base;
         List<RawMessage> out = new ArrayList<>(candidates.length);
         for (Message message : candidates) {
-            long uid = uf.getUID(message);
-            String from = firstAddress(message);
-            String subject = Optional.ofNullable(message.getSubject()).orElse("");
-            String body = extractText(message);
-            String messageId = stableMessageId(message, subject);
-            out.add(new RawMessage(from, subject, body, messageId));
+            long uid;
+            try {
+                uid = uf.getUID(message);
+            } catch (MessagingException e) {
+                // Can't even read the UID — skip without advancing (nothing to advance to).
+                log.warn("IMAP: cannot read UID of a message in '{}', skipping: {}",
+                        vendor.getRestaurantName(), e.getMessage());
+                continue;
+            }
+            try {
+                String from = firstAddress(message);
+                String subject = Optional.ofNullable(message.getSubject()).orElse("");
+                String body = extractText(message);
+                String messageId = stableMessageId(message, subject);
+                out.add(new RawMessage(from, subject, body, messageId));
+            } catch (MessagingException e) {
+                // Poison message: one bad envelope must NOT abort the whole fetch and
+                // wedge this vendor forever (the UID watermark only advances after the
+                // loop). Log + skip, but STILL advance the cursor past it below so the
+                // next poll self-heals.
+                log.warn("IMAP: skipping unreadable message uid={} for '{}': {}",
+                        uid, vendor.getRestaurantName(), e.getMessage());
+            }
             if (uid > maxUid) {
                 maxUid = uid;
             }

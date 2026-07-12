@@ -60,6 +60,12 @@ public class NotificationDispatcher {
             if (!enabledFor(s, eventType, order)) {
                 return;
             }
+            // Re-validate post-DNS (fail closed): a tenant could have pointed the host at
+            // an internal address after save (DNS rebinding), or saved before this guard.
+            if (!WebhookUrlGuard.isSafeToDispatch(s.getWebhookUrl())) {
+                log.warn("Notification webhook for account {} skipped: URL failed SSRF guard", accountId);
+                return;
+            }
             restClient.post()
                     .uri(s.getWebhookUrl())
                     .contentType(MediaType.APPLICATION_JSON)

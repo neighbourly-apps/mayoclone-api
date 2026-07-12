@@ -39,9 +39,8 @@ public class DoubleSubmitCsrfFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         if (isProtected(request)) {
-            String cookie = readCookie(request);
             String header = request.getHeader(CSRF_HEADER);
-            if (cookie == null || cookie.isBlank() || !cookie.equals(header)) {
+            if (header == null || header.isBlank() || !matchesAnyCsrfCookie(request, header)) {
                 response.setStatus(HttpStatus.FORBIDDEN.value());
                 response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                 response.getWriter().write("{\"error\":\"csrf\",\"message\":\"CSRF token missing or invalid\"}");
@@ -51,16 +50,26 @@ public class DoubleSubmitCsrfFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    private String readCookie(HttpServletRequest request) {
+    /**
+     * True if the header equals ANY {@code csrf} cookie on the request. A browser
+     * can legitimately carry more than one {@code csrf} cookie (e.g. a stale cookie
+     * left at a previous path after a cookie-path change), and it sends them all;
+     * matching any of them keeps the double-submit guarantee (a cross-site attacker
+     * still can't read the value to set the header) while avoiding a spurious 403
+     * loop when the server would otherwise read the wrong duplicate first.
+     */
+    private boolean matchesAnyCsrfCookie(HttpServletRequest request, String header) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
-            return null;
+            return false;
         }
         for (Cookie c : cookies) {
-            if (CSRF_COOKIE.equals(c.getName())) {
-                return c.getValue();
+            if (CSRF_COOKIE.equals(c.getName())
+                    && c.getValue() != null && !c.getValue().isBlank()
+                    && c.getValue().equals(header)) {
+                return true;
             }
         }
-        return null;
+        return false;
     }
 }

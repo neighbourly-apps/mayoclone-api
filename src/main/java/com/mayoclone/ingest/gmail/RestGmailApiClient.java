@@ -1,5 +1,6 @@
 package com.mayoclone.ingest.gmail;
 
+import com.mayoclone.util.TimeoutRestClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -24,7 +25,9 @@ public class RestGmailApiClient implements GmailApiClient {
 
     private static final Logger log = LoggerFactory.getLogger(RestGmailApiClient.class);
 
-    private final RestClient http = RestClient.create();
+    // Timeouts (connect 3s / read 10s) so a wedged Google socket cannot hang a worker
+    // thread forever. Bare RestClient.create() has NO timeouts.
+    private final RestClient http = TimeoutRestClients.create();
 
     @Override
     @SuppressWarnings("unchecked")

@@ -1,5 +1,6 @@
 package com.mayoclone.billing;
 
+import com.mayoclone.util.TimeoutRestClients;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -23,7 +24,9 @@ public class RazorpayClient {
     private static final Logger log = LoggerFactory.getLogger(RazorpayClient.class);
     private static final String ORDERS_URL = "https://api.razorpay.com/v1/orders";
 
-    private final RestClient http = RestClient.create();
+    // Timeouts (connect 3s / read 10s) so a wedged Razorpay socket cannot hang the
+    // checkout servlet thread forever. Bare RestClient.create() has NO timeouts.
+    private final RestClient http = TimeoutRestClients.create();
 
     /** @return the created order's id (Razorpay {@code id} field). */
     @SuppressWarnings("unchecked")

@@ -8,9 +8,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.DatabaseMetaData;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -32,23 +37,39 @@ public class RenewalReminderJob {
 
     private static final Logger log = LoggerFactory.getLogger(RenewalReminderJob.class);
 
+    /**
+     * Distinct advisory-lock key for the renewal-reminder sweep (leader election across
+     * instances). Different from the poll dispatcher / watch renewer keys.
+     */
+    static final long ADVISORY_LOCK_KEY = 748_2002L;
+
     private final AccountRepository accountRepo;
     private final RenewalReminderSender sender;
     private final BillingProperties billingProps;
+    private final JdbcTemplate jdbc;
+    private final TransactionTemplate txTemplate;
 
     private final boolean enabled;
     private final int daysBefore;
     private final int maxPerRun;
 
+    /** Resolved once: true when the datasource is Postgres (supports advisory locks). */
+    private volatile Boolean postgres;
+
     public RenewalReminderJob(AccountRepository accountRepo,
                               RenewalReminderSender sender,
                               BillingProperties billingProps,
+                              JdbcTemplate jdbc,
                               @Value("${mayoclone.billing.reminder.enabled:true}") boolean enabled,
                               @Value("${mayoclone.billing.reminder.days-before:5}") int daysBefore,
                               @Value("${mayoclone.billing.reminder.max-per-run:500}") int maxPerRun) {
         this.accountRepo = accountRepo;
         this.sender = sender;
         this.billingProps = billingProps;
+        this.jdbc = jdbc;
+        this.txTemplate = (jdbc != null && jdbc.getDataSource() != null)
+                ? new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()))
+                : null;
         this.enabled = enabled;
         this.daysBefore = Math.max(1, daysBefore);
         this.maxPerRun = Math.max(1, maxPerRun);
@@ -61,13 +82,41 @@ public class RenewalReminderJob {
             return; // reminders disabled — do nothing
         }
         try {
-            int sent = sweep();
+            int sent;
+            if (txTemplate != null && isPostgres()) {
+                // Leader election across instances: run the sweep only if this instance
+                // wins pg_try_advisory_xact_lock, so a k8s HPA (2-6 pods) doesn't
+                // double-send reminders. The lock auto-releases when the tx commits.
+                Integer n = txTemplate.execute(status -> tryLock() ? sweep() : 0);
+                sent = n == null ? 0 : n;
+            } else {
+                sent = sweep(); // H2/tests/no-jdbc: no cross-instance contention
+            }
             if (sent > 0) {
                 log.info("Renewal reminder sweep sent {} reminder(s)", sent);
             }
         } catch (RuntimeException e) {
             log.warn("Renewal reminder sweep failed: {}", e.toString());
         }
+    }
+
+    private boolean tryLock() {
+        Boolean locked = jdbc.queryForObject(
+                "SELECT pg_try_advisory_xact_lock(?)", Boolean.class, ADVISORY_LOCK_KEY);
+        return Boolean.TRUE.equals(locked);
+    }
+
+    private boolean isPostgres() {
+        Boolean pg = this.postgres;
+        if (pg == null) {
+            pg = Boolean.TRUE.equals(jdbc.execute((ConnectionCallback<Boolean>) conn -> {
+                DatabaseMetaData md = conn.getMetaData();
+                String name = md.getDatabaseProductName();
+                return name != null && name.toLowerCase().contains("postgres");
+            }));
+            this.postgres = pg;
+        }
+        return pg;
     }
 
     /**

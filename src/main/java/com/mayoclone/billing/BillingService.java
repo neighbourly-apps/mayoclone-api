@@ -5,9 +5,11 @@ import com.mayoclone.billing.BillingDtos.BillingStatus;
 import com.mayoclone.billing.BillingDtos.CheckoutResponse;
 import com.mayoclone.billing.BillingDtos.PlanDto;
 import com.mayoclone.domain.Account;
+import com.mayoclone.domain.PendingCheckout;
 import com.mayoclone.domain.SubscriptionPayment;
 import com.mayoclone.domain.SubscriptionStatus;
 import com.mayoclone.repository.AccountRepository;
+import com.mayoclone.repository.PendingCheckoutRepository;
 import com.mayoclone.repository.SubscriptionPaymentRepository;
 import com.mayoclone.service.AuditService;
 import org.slf4j.Logger;
@@ -37,6 +39,7 @@ public class BillingService {
 
     private final AccountRepository accountRepo;
     private final SubscriptionPaymentRepository paymentRepo;
+    private final PendingCheckoutRepository pendingRepo;
     private final BillingProperties props;
     private final RazorpayClient razorpay;
     private final AuditService auditService;
@@ -44,12 +47,14 @@ public class BillingService {
 
     public BillingService(AccountRepository accountRepo,
                           SubscriptionPaymentRepository paymentRepo,
+                          PendingCheckoutRepository pendingRepo,
                           BillingProperties props,
                           RazorpayClient razorpay,
                           AuditService auditService,
                           ObjectMapper json) {
         this.accountRepo = accountRepo;
         this.paymentRepo = paymentRepo;
+        this.pendingRepo = pendingRepo;
         this.props = props;
         this.razorpay = razorpay;
         this.auditService = auditService;
@@ -112,7 +117,14 @@ public class BillingService {
 
     // --- checkout -------------------------------------------------------------
 
-    @Transactional(readOnly = true)
+    /**
+     * Create a Razorpay order for {@code planCode} and BIND it (order id → account,
+     * plan, amount) in {@code pending_checkout} so /verify can activate the exact plan
+     * that was paid for. Deliberately NOT {@code @Transactional}: the createOrder HTTP
+     * call must run OUTSIDE any DB transaction so a slow/wedged Razorpay socket can't
+     * pin a pooled connection for the whole call; the binding is then persisted in the
+     * repository's own (short) transaction.
+     */
     public CheckoutResponse checkout(Long accountId, String planCode) {
         if (!props.isRazorpayEnabled()) {
             throw new BillingException(HttpStatus.SERVICE_UNAVAILABLE, "billing_not_configured");
@@ -121,17 +133,29 @@ public class BillingService {
         Account a = load(accountId);
         String receipt = "acct-" + a.getId() + "-" + Instant.now().getEpochSecond();
         // The plan code rides along in the order notes so the SERVER webhook can learn
-        // which plan was paid; the client /verify carries it in its request body.
+        // which plan was paid. This is a live HTTP call — kept outside any DB transaction.
         String orderId = razorpay.createOrder(
                 props.getRazorpayKeyId(), props.getRazorpayKeySecret(),
                 plan.amount(), plan.currency(), receipt,
                 Map.of("accountId", String.valueOf(a.getId()), "plan", plan.code()));
+        // Server-authoritative record of what this order is FOR. /verify reads it back
+        // and ignores the client-sent plan, so a monthly payment can't be verified as annual.
+        pendingRepo.save(new PendingCheckout(
+                orderId, a.getId(), plan.code(), plan.amount(), plan.currency(), Instant.now()));
         return new CheckoutResponse(props.getRazorpayKeyId(), orderId,
                 plan.amount(), plan.currency(), plan.name(), plan.code());
     }
 
     // --- verify (client callback) --------------------------------------------
 
+    /**
+     * Verify the Razorpay checkout callback and activate the plan the ORDER was created
+     * for. The signature only binds {@code order_id|payment_id}, so the granted plan and
+     * amount are taken from the server-written {@code pending_checkout} row (NOT the
+     * client-sent {@code planCode}, which is ignored). Rejects (400) an order that was
+     * never checked out here or that belongs to another account. Idempotent: a replayed
+     * verify re-resolves the same row and no-ops on the payment (unique provider+paymentId).
+     */
     @Transactional
     public BillingStatus verify(Long accountId, String orderId, String paymentId, String signature, String planCode) {
         if (orderId == null || paymentId == null || signature == null
@@ -140,9 +164,15 @@ public class BillingService {
                 orderId + "|" + paymentId, signature)) {
             throw new BillingException(HttpStatus.BAD_REQUEST, "invalid_signature");
         }
-        PlanDto plan = props.plan(planCode); // 400 on unknown code
+        // The order MUST have been created by our checkout and MUST belong to this account.
+        PendingCheckout pending = pendingRepo.findById(orderId).orElse(null);
+        if (pending == null || !accountId.equals(pending.getAccountId())) {
+            throw new BillingException(HttpStatus.BAD_REQUEST, "unknown_order");
+        }
+        // Server-authoritative plan/amount — the client-sent planCode is intentionally ignored.
+        PlanDto plan = props.plan(pending.getPlanCode());
         Account a = load(accountId);
-        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, plan);
+        extendPeriod(a, PROVIDER_RAZORPAY, paymentId, plan, pending.getAmount(), pending.getCurrency());
         auditService.record(a.getId(), a.getEmail(), "billing.verify", "account",
                 String.valueOf(a.getId()), Map.of("paymentId", paymentId, "plan", plan.code()));
         return statusFor(a);
@@ -174,22 +204,42 @@ public class BillingService {
         Map<String, Object> order = entity(root, "order");
         String paymentId = payment == null ? null : str(payment.get("id"));
         Long acctId = resolveAccountId(payment, order);
-        if (paymentId == null || acctId == null) {
-            log.warn("Razorpay webhook {}: could not resolve payment/account", event);
+        if (paymentId == null) {
+            log.warn("Razorpay webhook {}: could not resolve payment id", event);
             return;
         }
         // Plan the customer paid for: from the order/payment notes we set at checkout,
         // falling back to the account's current plan, then the default.
         PlanDto plan = resolvePlanFromNotes(payment, order);
-        long amount = payment.get("amount") == null ? plan.amount() : asLong(payment.get("amount"));
-        String currency = payment.get("currency") == null ? plan.currency() : str(payment.get("currency"));
-        Account a = accountRepo.findById(acctId).orElse(null);
+        long amount = payment.get("amount") == null ? 0L : asLong(payment.get("amount"));
+        String currency = payment.get("currency") == null ? null : str(payment.get("currency"));
+        // Reconcile against the server-written checkout binding when the order id is
+        // present: it is authoritative for the plan/amount (guards against tampering).
+        String orderId = resolveOrderId(payment, order);
+        if (orderId != null) {
+            PendingCheckout pending = pendingRepo.findById(orderId).orElse(null);
+            if (pending != null) {
+                plan = props.planOrDefault(pending.getPlanCode());
+                amount = pending.getAmount();
+                currency = pending.getCurrency();
+                if (acctId == null) {
+                    acctId = pending.getAccountId();
+                }
+            }
+        }
+        Account a = acctId == null ? null : accountRepo.findById(acctId).orElse(null);
         if (a == null) {
             log.warn("Razorpay webhook: account {} not found", acctId);
             return;
         }
         if (plan == null) {
             plan = props.planOrDefault(a.getPlan());
+        }
+        if (amount <= 0) {
+            amount = plan.amount();
+        }
+        if (currency == null) {
+            currency = plan.currency();
         }
         extendPeriod(a, PROVIDER_RAZORPAY, paymentId, plan, amount, currency);
         auditService.record(a.getId(), a.getEmail(), "billing.webhook", "account",
@@ -256,6 +306,17 @@ public class BillingService {
                     }
                 }
             }
+        }
+        return null;
+    }
+
+    /** Razorpay order id from the webhook: {@code payment.order_id} or {@code order.id}. */
+    private static String resolveOrderId(Map<String, Object> payment, Map<String, Object> order) {
+        if (payment != null && payment.get("order_id") != null) {
+            return str(payment.get("order_id"));
+        }
+        if (order != null && order.get("id") != null) {
+            return str(order.get("id"));
         }
         return null;
     }
