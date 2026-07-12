@@ -328,4 +328,322 @@ class RealAggregatorEmailParsingTest {
         assertMoney("159.00", item.getPrice());
         assertMoney("159.00", p.amount());
     }
+
+    // ========================================================================
+    // VALUE-VARIED twins: same six formats, DIFFERENT values throughout, to
+    // prove the parser extracts whatever is present rather than memorizing the
+    // sample values. Each varies order#, pnr, train, coach, seat, station,
+    // passenger, date, item name, qty (>1) and amount; station coverage spans a
+    // name-only ("NEW DELHI") and a code-only ("NDLS") value.
+    // ========================================================================
+
+    // 1) IRCTC — name-only station "NEW DELHI", qty 3, class prefix "GN".
+    private static final String IRCTC_V = """
+            Order Confirmation
+            Dear Zaika Foods,
+            We have received the COD Order having Order Number 9911223344 on 05-08-2026
+            Order details:
+            ORDER No    9911223344    PNR No    4455667788
+            MOBILE No    9812300011    TRAIN No    12951
+            ALTERNATE MOBILE No    -    Comment    -
+            JOURNEY DATE    05-08-2026    ORDER DATE    05-08-2026
+            PAYMENT STATUS    CASH_ON_DELIVERY    COACH NO / SEAT NO    GN/A1/ 12
+            DELIVERY STATION    NEW DELHI    DELIVERY TIME    08:30
+            VENDOR    Zaika Foods    ETA    05-Aug-2026 08:30
+            Order Item Details:
+            Item    Price    Quantity    Amount
+            Paneer Butter Masala    ₹ 250.00    3    ₹ 750.00
+            Sub Total    ₹ 750.00
+            GST    ₹ 37.50
+            Grand Total (Inclusive of all taxes)    ₹ 812
+            """;
+
+    @Test
+    void parsesIrctcEcateringVaried() {
+        ParsedOrder p = generic.parse(agg("IRCTC_ECATERING"), "ecatering@irctc.co.in",
+                "New IRCTC order # 9911223344", IRCTC_V, "<irctc-2@irctc.co.in>");
+
+        assertEquals("9911223344", p.externalOrderId());
+        assertEquals("4455667788", p.pnr());
+        assertEquals("9812300011", p.passengerPhone());
+        assertEquals("12951", p.trainNumber());
+        assertEquals("A1", p.coach());
+        assertEquals("12", p.berth());
+        assertNull(p.deliveryStationCode());
+        assertEquals("NEW DELHI", p.deliveryStationName());
+        assertEquals(LocalDate.of(2026, 8, 5), p.deliveryDate());
+        assertEquals("08:30", p.deliverySlot());
+        assertEquals("COD", p.paymentMode());
+        OrderItem item = p.items().get(0);
+        assertEquals("Paneer Butter Masala", item.getName());
+        assertEquals(3, item.getQty());
+        assertMoney("250.00", item.getPrice());
+        assertMoney("812", p.amount());
+    }
+
+    // 2) RailRestro — qty 2, different train/coach/passenger.
+    private static final String RAILRESTRO_V = """
+            Dear PRIYA SHARMA,
+            You have just received a new order, Please ensure delivery on the journey date:
+            ORDER #: 7788991 Customer: Ravi Kumar Verma 9001234567
+            TRAIN: 12002 / BHOPAL SHATABDI
+            Delivery Time: 2026-08-05 09:15:00
+            PNR No.: 2233445566 Coact/Seat: A2-15
+            Item Name    Price    Quantity    Total
+            Chicken Biryani    Rs. 180    2    Rs. 360
+            Total:    Rs. 360
+            GST:    Rs. 18
+            Payable Total:    Rs. 378
+            (Amount to collect)    Rs. 378
+            """;
+
+    @Test
+    void parsesRailRestroVaried() {
+        ParsedOrder p = generic.parse(agg("RAILRESTRO"), "no-reply@railrestro.com",
+                "New Order #7788991 Received", RAILRESTRO_V, "<rr-2@railrestro.com>");
+
+        assertEquals("7788991", p.externalOrderId());
+        assertEquals("Ravi Kumar Verma", p.passengerName());
+        assertEquals("9001234567", p.passengerPhone());
+        assertEquals("12002", p.trainNumber());
+        assertEquals("BHOPAL SHATABDI", p.trainName());
+        assertEquals(LocalDate.of(2026, 8, 5), p.deliveryDate());
+        assertEquals("09:15", p.deliverySlot());
+        assertEquals("2233445566", p.pnr());
+        assertEquals("A2", p.coach());
+        assertEquals("15", p.berth());
+        OrderItem item = p.items().get(0);
+        assertEquals("Chicken Biryani", item.getName());
+        assertEquals(2, item.getQty());
+        assertMoney("180", item.getPrice());
+        assertMoney("378", p.amount());
+        assertMoney("378", p.amountToCollect());
+        assertEquals("COD", p.paymentMode());
+    }
+
+    // 3) RELFOOD — NAME (CODE) station "NEW DELHI (NDLS)", US slash date, qty 2.
+    private static final String RELFOOD_V = """
+            Amit Kumar
+            IRCTC Order No. 3312456789
+            Booking Date : 05-08-2026
+            ORDER SUMMERY
+            Customer Name    Amit Kumar
+            Contact Number    9887766554, 9887766554
+            PNR    XXXXXXXXXX
+            Train No./Name    12002 / BHOPAL SHATABDI
+            Coach/Seat    A2/22
+            Payment Mode    PAID
+            Payment to collect    0
+            BILL DETAILS
+            REL FOOD Ref.No : 2211334
+            OUTLET NAME : Zaika Food NDLS
+            Station Name & Code : NEW DELHI (NDLS)
+            Delivery Date & Time : 8/5/2026 & 09:45
+            Item    Price    Quantity    Total
+            Veg Thali
+            Paneer rice roti salad    150    2    300
+            Sub Total    300
+            GST    15
+            Total    315
+            """;
+
+    @Test
+    void parsesRelfoodVaried() {
+        ParsedOrder p = generic.parse(agg("RELFOOD"), "orders@relfood.com",
+                "REL FOOD Order Invoice No.: 2211334", RELFOOD_V, "<rel-2@relfood.com>");
+
+        assertEquals("3312456789", p.externalOrderId());
+        assertEquals("Amit Kumar", p.passengerName());
+        assertEquals("9887766554", p.passengerPhone());
+        assertNull(p.pnr());
+        assertEquals("12002", p.trainNumber());
+        assertEquals("BHOPAL SHATABDI", p.trainName());
+        assertEquals("A2", p.coach());
+        assertEquals("22", p.berth());
+        assertEquals("PAID", p.paymentMode());
+        assertMoney("0", p.amountToCollect());
+        assertEquals("NDLS", p.deliveryStationCode());
+        assertEquals("NEW DELHI", p.deliveryStationName());
+        assertEquals(LocalDate.of(2026, 8, 5), p.deliveryDate());
+        assertEquals("09:45", p.deliverySlot());
+        OrderItem item = p.items().get(0);
+        assertEquals("Veg Thali", item.getName());
+        assertEquals(2, item.getQty());
+        assertMoney("150", item.getPrice());
+        assertMoney("315", p.amount());
+    }
+
+    // 4) RailRecipe — code-only station "NDLS", name/desc + "₹price xN ₹amount", qty 2.
+    private static final String RAILRECIPE_V = """
+            Dear Zaika Foods ,
+            We have received the COD Order having Order Number 5566778 on Aug 5, 2026
+            Order Details :
+            Order No.    5566778
+            PNR No    9911002233
+            Mobile No.    9765432100
+            Alt. mobile no
+            Train No.    22691
+            Coach/Seat    C3/8
+            Delivery Station    NDLS
+            Delivery Time (ETA)    Aug 5,2026 10:20
+            Journey Date    2026-08-04
+            Order Date    Aug 5, 2026
+            Comment
+            PAYMENT STATUS    CASH_ON_DELIVERY
+            Item Name Price Quantity Amount
+            Masala Dosa
+            Crispy dosa with sambar
+            ₹ 90    x2    ₹180
+            Subtotal    ₹ 180
+            GST    ₹ 9.00
+            Grand Total    ₹ 189.00
+            """;
+
+    @Test
+    void parsesRailRecipeVaried() {
+        ParsedOrder p = generic.parse(agg("RAILRECIPE"), "no-reply@railrecipe.com",
+                "Dear Zaika Foods, order id 5566778 is ACCEPTED", RAILRECIPE_V, "<rec-2@railrecipe.com>");
+
+        assertEquals("5566778", p.externalOrderId());
+        assertEquals("9911002233", p.pnr());
+        assertEquals("9765432100", p.passengerPhone());
+        assertEquals("22691", p.trainNumber());
+        assertEquals("C3", p.coach());
+        assertEquals("8", p.berth());
+        assertEquals("NDLS", p.deliveryStationCode());
+        assertNull(p.deliveryStationName());
+        assertEquals("10:20", p.deliverySlot());
+        assertEquals(LocalDate.of(2026, 8, 4), p.deliveryDate());
+        assertEquals("COD", p.paymentMode());
+        OrderItem item = p.items().get(0);
+        assertEquals("Masala Dosa", item.getName());
+        assertEquals(2, item.getQty());
+        assertMoney("90", item.getPrice());
+        assertMoney("189.00", p.amount());
+    }
+
+    // 5) Zoop — name-first train "Goa Express/ 12779", At name/ code, qty 3.
+    private static final String ZOOP_V = """
+            ZOOP
+            Order Confirmation
+            Dear Zaika Foods,
+            You have received a New Prepaid Order having Order Number ZO220445566778899 on 05-Aug-2026 11:10
+            Order Details:
+            ZOOP Txn. No.    : ZO220445566778899    Type    : Prepaid
+            Customer Name    : Meera Nair    Phone    : 9445566778
+            Train    : Goa Express/ 12779    Coach/ Seat    : S4/ 21
+            Restaurants Name    : (1720) Zaika Foods    ETA    : 05-Aug-2026 11:10
+            At    : New Delhi Railway Station/ NDLS    Delivery Date    : 05-Aug-2026 11:10
+            Item Details:
+            Item Name    Price    Quantity    Amount
+            Chicken Curry    180    3    540
+            Base Price Total    ₹ 540
+            (+) GST on food    ₹ 27
+            Order Total    ₹ 567
+            (-) Paid Online    ₹ 567
+            BALANCE TO PAY    ₹ 0
+            """;
+
+    @Test
+    void parsesZoopVaried() {
+        ParsedOrder p = zoop.parse(agg("ZOOP"), "noreply@zoopindia.com",
+                "ZOOP - IRCTC New Order #ZO220445566778899", ZOOP_V, "<zoop-2@zoopindia.com>");
+
+        assertEquals("ZO220445566778899", p.externalOrderId());
+        assertEquals("Meera Nair", p.passengerName());
+        assertEquals("9445566778", p.passengerPhone());
+        assertEquals("12779", p.trainNumber());
+        assertEquals("Goa Express", p.trainName());
+        assertEquals("S4", p.coach());
+        assertEquals("21", p.berth());
+        assertEquals("NDLS", p.deliveryStationCode());
+        assertEquals("New Delhi Railway Station", p.deliveryStationName());
+        assertEquals("PREPAID", p.paymentMode());
+        assertMoney("0", p.amountToCollect());
+        assertEquals(LocalDate.of(2026, 8, 5), p.deliveryDate());
+        assertEquals("11:10", p.deliverySlot());
+        OrderItem item = p.items().get(0);
+        assertEquals("Chicken Curry", item.getName());
+        assertEquals(3, item.getQty());
+        assertMoney("180", item.getPrice());
+        assertMoney("567", p.amount());
+    }
+
+    // 6) Rajbhog — CODE / NAME station "NDLS / NEW DELHI", SL# column with qty 2.
+    private static final String RAJBHOG_V = """
+            Booking Date: 04 Aug 2026, 14:00
+            Delivery Date: 04 Aug 2026, 18:45
+            FSSAI NO.: 11122233344455
+            To
+            Customer Name : Karan Mehta
+            Customer Contact : 9332211445
+            Customer Email :
+            Invoice RBK009988776 / 3312009988
+            Payment: CASH_ON_DELIVERY
+            Coach / Berth: B2 / 27
+            Train: 12780 / GOA EXPRESS
+            Delivery Station: NDLS / NEW DELHI
+            SL#    Item    Description    Qty    Price    GST    Amount
+            1    CHICKEN THALI    rice dal chicken curry salad sweet    2    140.00    14.00    280.00
+            Subtotal:    280.00
+            GST (5%)    14.00
+            Total:    280.00
+            """;
+
+    @Test
+    void parsesRajbhogKhanaVaried() {
+        ParsedOrder p = generic.parse(agg("RAJBHOGKHANA"), "orders@rajbhogkhana.com",
+                "RBK Order Confirmation #RBK009988776", RAJBHOG_V, "<rbk-2@rajbhogkhana.com>");
+
+        assertEquals("RBK009988776", p.externalOrderId());
+        assertEquals("Karan Mehta", p.passengerName());
+        assertEquals("9332211445", p.passengerPhone());
+        assertEquals("COD", p.paymentMode());
+        assertEquals("B2", p.coach());
+        assertEquals("27", p.berth());
+        assertEquals("12780", p.trainNumber());
+        assertEquals("GOA EXPRESS", p.trainName());
+        assertEquals("NDLS", p.deliveryStationCode());
+        assertEquals("NEW DELHI", p.deliveryStationName());
+        assertEquals(LocalDate.of(2026, 8, 4), p.deliveryDate());
+        assertEquals("18:45", p.deliverySlot());
+        OrderItem item = p.items().get(0);
+        assertEquals("CHICKEN THALI", item.getName());
+        assertEquals(2, item.getQty());
+        assertMoney("140.00", item.getPrice());
+        assertMoney("280.00", p.amount());
+    }
+
+    // Direct repro of the two coordinator bug cases: header-absent columnar with a
+    // decoy line; and the "₹price xqty ₹amount" layout with a description line.
+    @Test
+    void itemParserHandlesDecoyAndHeaderlessColumnar() {
+        String body = """
+                Chicken Dum Biryani nope
+                Paneer Butter Masala    ₹ 250.00    3    ₹ 750.00
+                Grand Total (Inclusive of all taxes)    ₹ 812
+                """;
+        ParsedOrder p = generic.parse(agg("IRCTC_ECATERING"), "ecatering@irctc.co.in",
+                "New IRCTC order", body, "<irctc-3@irctc.co.in>");
+        assertEquals(1, p.items().size());
+        assertEquals("Paneer Butter Masala", p.items().get(0).getName());
+        assertEquals(3, p.items().get(0).getQty());
+        assertMoney("250.00", p.items().get(0).getPrice());
+    }
+
+    @Test
+    void itemParserHandlesPriceXQtyAmountWithDescription() {
+        String body = """
+                Masala Dosa
+                Crispy dosa
+                ₹ 90    x2    ₹180
+                Grand Total    ₹ 145.50
+                """;
+        ParsedOrder p = generic.parse(agg("RAILRECIPE"), "no-reply@railrecipe.com",
+                "order", body, "<rec-3@railrecipe.com>");
+        assertEquals(1, p.items().size());
+        assertEquals("Masala Dosa", p.items().get(0).getName());
+        assertEquals(2, p.items().get(0).getQty());
+        assertMoney("90", p.items().get(0).getPrice());
+    }
 }

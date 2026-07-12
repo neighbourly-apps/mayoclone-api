@@ -179,6 +179,10 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     // A whole table cell that is purely a number (optionally ₹/Rs/INR or an "xN" qty).
     private static final Pattern NUMERIC_CELL = Pattern.compile(
             "^(?:₹|Rs\\.?|INR|x)?" + H + "*([0-9][0-9,]*(?:\\.\\d{1,2})?)$", Pattern.CASE_INSENSITIVE);
+    // A numeric cell that carries an explicit currency symbol (₹/Rs/INR) — the
+    // strongest "this is a money row" signal, and marks a self-contained item row.
+    private static final Pattern CURRENCY_CELL = Pattern.compile(
+            "^(?:₹|Rs\\.?|INR)", Pattern.CASE_INSENSITIVE);
     private static final Pattern CELL_SPLIT = Pattern.compile("\\t+| {2,}|\\u00a0{2,}");
 
     private static final DateTimeFormatter[] TEXT_DATE_FORMATS = {
@@ -291,14 +295,23 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         return m.find() ? parseStation(m.group(1).trim()) : new String[]{null, null};
     }
 
-    /** Split a station cell into {code, name}. Codes are 2–5 uppercase letters. */
+    /**
+     * Split a station cell into {code, name}. A token is treated as a CODE only
+     * when it is unambiguous: (a) a parenthetical {@code NAME (VGLJ)}; (b) a slash
+     * form {@code CODE / NAME} or {@code NAME / CODE} where one side is a 2–5 char
+     * all-caps code; (c) a leading all-caps code followed by a mixed-case proper
+     * name ({@code NDLS New Delhi}); or (d) a bare single all-caps token of 3–5
+     * letters ({@code VGLJ}, {@code NDLS}). A multi-word value with no such code
+     * is treated wholly as the name — so {@code NEW DELHI} does NOT lose "NEW" to a
+     * bogus code.
+     */
     protected String[] parseStation(String seg) {
-        // NAME (CODE)
+        // (a) NAME (CODE)
         Matcher paren = Pattern.compile("^(.+?)\\s*\\(([A-Za-z]{2,5})\\)\\s*$").matcher(seg);
         if (paren.matches()) {
             return new String[]{paren.group(2).toUpperCase(Locale.ROOT), paren.group(1).trim()};
         }
-        // CODE / NAME  or  NAME / CODE
+        // (b) CODE / NAME  or  NAME / CODE
         int slash = seg.indexOf('/');
         if (slash >= 0) {
             String left = seg.substring(0, slash).trim();
@@ -311,16 +324,18 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             }
             return new String[]{null, seg};
         }
-        // CODE Name  (code then space then a name)
+        // (c) CODE Name — leading all-caps code, then a MIXED-CASE proper name.
+        // Requiring a lowercase letter in the name half prevents an all-caps
+        // two-word NAME ("NEW DELHI") from being split into code+name.
         Matcher cn = Pattern.compile("^([A-Z]{2,5})\\s+(\\S.*)$").matcher(seg);
-        if (cn.matches()) {
+        if (cn.matches() && cn.group(2).chars().anyMatch(Character::isLowerCase)) {
             return new String[]{cn.group(1), cn.group(2).trim()};
         }
-        // bare CODE
-        if (seg.matches("[A-Z]{2,5}")) {
+        // (d) bare CODE — a single all-caps 3–5 letter token with no spaces.
+        if (seg.matches("[A-Z]{3,5}")) {
             return new String[]{seg, null};
         }
-        // bare NAME
+        // otherwise the whole value is the name
         return new String[]{null, seg};
     }
 
@@ -474,11 +489,20 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     }
 
     /**
-     * Parse the tabular "Item / Price / Qty / Amount" section that every real
-     * aggregator uses. Handles the name and its price/qty/amount on one row, the
-     * name on its own line with the numbers on the next, and a name + a
-     * description line + a "₹price xQty ₹amount" line. Summary rows (Sub Total,
-     * GST, Grand Total, …) are skipped.
+     * Parse the tabular line-item section every real aggregator uses, robust to
+     * value variation (any qty, multi-word names) and layout variation:
+     * <ul>
+     *   <li>{@code Name  ₹price  qty  ₹amount} — name and numbers on one row;</li>
+     *   <li>{@code ₹price  xNqty  ₹amount} with the name (and an optional
+     *       description) on the preceding line(s);</li>
+     *   <li>a {@code Name} row then a {@code Description  price  qty  amount} row.</li>
+     * </ul>
+     * A row is treated as an item when it carries a money cell (₹/Rs/INR or a
+     * decimal) OR — after an "Item Price Qty Amount" header — any numeric cells, so
+     * currency-less tables and header-less tables both parse. This means the header
+     * is helpful but not required, and stray/decoy lines and bare-digit field rows
+     * (phone, train no.) are ignored. Summary rows (Sub Total, GST, Grand Total, …)
+     * are skipped.
      */
     private List<OrderItem> extractColumnarItems(String body) {
         List<OrderItem> items = new ArrayList<>();
@@ -489,22 +513,26 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             if (trimmed.isEmpty()) {
                 continue;
             }
-            if (!inItems) {
-                if (ITEM_HEADER.matcher(trimmed).find()) {
-                    inItems = true;
-                    pendingName = null;
-                }
+            if (ITEM_HEADER.matcher(trimmed).find()) {
+                inItems = true;
+                pendingName = null;
                 continue;
             }
             if (isSummaryLine(trimmed)) {
                 pendingName = null;
                 continue;
             }
-            String[] cells = CELL_SPLIT.split(trimmed);
+
             List<BigDecimal> numbers = new ArrayList<>();
             List<Boolean> isInteger = new ArrayList<>();
+            // Price/qty/amount columns only ever follow the item name; a numeric cell
+            // BEFORE the name is a row index ("SL#") and must not be mistaken for the
+            // quantity. We track which numbers came after the first text cell.
+            List<BigDecimal> afterName = new ArrayList<>();
+            List<Boolean> afterNameInt = new ArrayList<>();
+            boolean hasCurrency = false;
             String firstText = null;
-            for (String cell : cells) {
+            for (String cell : CELL_SPLIT.split(trimmed)) {
                 String c = cell.strip();
                 if (c.isEmpty()) {
                     continue;
@@ -512,26 +540,60 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
                 Matcher n = NUMERIC_CELL.matcher(c);
                 if (n.matches()) {
                     BigDecimal v = parseMoney(n.group(1));
+                    boolean intCell = !c.contains(".");
                     numbers.add(v);
-                    isInteger.add(!c.contains("."));
+                    isInteger.add(intCell);
+                    if (firstText != null) {
+                        afterName.add(v);
+                        afterNameInt.add(intCell);
+                    }
+                    if (CURRENCY_CELL.matcher(c).find()) {
+                        hasCurrency = true;
+                    }
                 } else if (firstText == null) {
                     firstText = c;
                 }
             }
-            if (numbers.isEmpty()) {
-                // A pure-text line: the first is the item name, later ones are the
-                // description (kept associated with the pending name).
-                if (pendingName == null && firstText != null) {
-                    pendingName = firstText;
+
+            boolean hasMoney = hasCurrency || isInteger.contains(Boolean.FALSE); // ₹/Rs or a decimal
+            boolean itemRow = hasMoney || (inItems && !numbers.isEmpty());
+
+            if (!itemRow) {
+                // Not an item: a pure-text line becomes the pending item name (the
+                // first such line; later text lines are its description); a bare-digit
+                // field row (phone/train no.) clears any stale pending name.
+                if (numbers.isEmpty()) {
+                    if (pendingName == null && firstText != null) {
+                        pendingName = firstText;
+                    }
+                } else {
+                    pendingName = null;
                 }
                 continue;
             }
-            String name = pendingName != null ? pendingName : firstText;
-            if (name == null) {
-                continue; // numbers with no name — skip defensively
+
+            // Name resolution. When the row carries its own text cell that is the
+            // NAME (self-contained "Name ₹price qty ₹amount" row) use it; when the
+            // row's text is a DESCRIPTION accompanying a preceding name (no currency
+            // symbol on the row, a pending name is set) keep the pending name; when
+            // the row has no text at all ("₹price xqty ₹amount") use the pending name.
+            String name;
+            if (firstText != null) {
+                name = (pendingName != null && !hasCurrency) ? pendingName : firstText;
+            } else {
+                name = pendingName;
             }
-            int qty = smallestInteger(numbers, isInteger);
-            BigDecimal amount = numbers.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
+            if (name == null) {
+                pendingName = null;
+                continue; // numbers with no discernible name — skip defensively
+            }
+
+            // Use only the columns that follow the name (dropping any SL# index);
+            // fall back to all numbers when the name has none after it.
+            List<BigDecimal> relevant = afterName.isEmpty() ? numbers : afterName;
+            List<Boolean> relevantInt = afterName.isEmpty() ? isInteger : afterNameInt;
+            int qty = smallestInteger(relevant, relevantInt);
+            BigDecimal amount = relevant.stream().max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
             BigDecimal unit = qty > 0
                     ? amount.divide(BigDecimal.valueOf(qty), 2, RoundingMode.HALF_UP)
                     : amount;
