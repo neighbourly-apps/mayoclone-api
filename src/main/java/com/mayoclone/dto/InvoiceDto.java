@@ -8,11 +8,11 @@ import java.util.List;
 /**
  * A printable invoice for one IRCTC order.
  *
- * <p>Tax is GST on food at {@code taxRatePct} = 5%. {@code subTotal} is the
- * source of truth for the amount: if the order carries an explicit total
- * ({@code order.amount}) it is used as the subtotal; otherwise the sum of the
- * line items is used. {@code taxAmount} = 5% of subTotal, {@code total} =
- * subTotal + taxAmount.
+ * <p>We NEVER compute tax ourselves. {@code subTotal}, {@code taxAmount} (the
+ * aggregator's stated GST), {@code total}, and the per-line breakdown on
+ * {@code order} are exactly the figures parsed from the aggregator email
+ * ({@code taxRatePct} is null — no derived rate). Missing figures are null and
+ * the UI simply omits those lines.
  */
 public record InvoiceDto(
         String invoiceNumber,
@@ -47,9 +47,19 @@ public record InvoiceDto(
             String deliveryStationCode,
             String deliveryStationName,
             String passengerName,
+            String passengerPhone,
             LocalDate deliveryDate,
             String deliverySlot,
-            String aggregatorName
+            String aggregatorName,
+            String paymentMode,
+            // Real aggregator-stated figures — never computed by us. Nullable when the email
+            // didn't state them; the UI shows only the lines that are present.
+            BigDecimal amount,
+            BigDecimal amountToCollect,
+            BigDecimal subtotalAmount,
+            BigDecimal gstAmount,
+            BigDecimal deliveryFee,
+            BigDecimal discountAmount
     ) {
     }
 

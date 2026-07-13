@@ -149,13 +149,13 @@ public class OrderService {
                 .map(InvoiceDto.Line::lineTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        BigDecimal subTotal = (o.getAmount() != null && o.getAmount().signum() > 0)
+        // Real aggregator-stated figures ONLY — we never compute or add tax ourselves.
+        BigDecimal subTotal = o.getSubtotalAmount() != null ? o.getSubtotalAmount()
+                : ((o.getAmount() != null && o.getAmount().signum() > 0) ? o.getAmount() : itemsTotal);
+        BigDecimal gst = o.getGstAmount();               // may be null → line hidden in UI
+        BigDecimal grandTotal = (o.getAmount() != null && o.getAmount().signum() > 0)
                 ? o.getAmount()
-                : itemsTotal;
-
-        BigDecimal taxAmount = subTotal.multiply(TAX_RATE_PCT)
-                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP);
-        BigDecimal total = subTotal.add(taxAmount);
+                : subTotal.add(gst != null ? gst : BigDecimal.ZERO);
 
         Vendor vendor = o.getVendorId() == null ? null
                 : vendorRepo.findByIdAndAccountId(o.getVendorId(), o.getAccountId()).orElse(null);
@@ -167,8 +167,11 @@ public class OrderService {
         InvoiceDto.Order orderView = new InvoiceDto.Order(
                 o.getExternalOrderId(), o.getPnr(), o.getTrainNumber(), o.getTrainName(),
                 o.getCoach(), o.getBerth(), o.getDeliveryStationCode(), o.getDeliveryStationName(),
-                o.getPassengerName(), o.getDeliveryDate(), o.getDeliverySlot(),
-                agg == null ? null : agg.getName());
+                o.getPassengerName(), o.getPassengerPhone(), o.getDeliveryDate(), o.getDeliverySlot(),
+                agg == null ? null : agg.getName(),
+                o.getPaymentMode() == null ? null : o.getPaymentMode().name(),
+                o.getAmount(), o.getAmountToCollect(), o.getSubtotalAmount(),
+                o.getGstAmount(), o.getDeliveryFee(), o.getDiscountAmount());
 
         return new InvoiceDto(
                 String.format("MC-INV-%06d", o.getId()),
@@ -177,9 +180,9 @@ public class OrderService {
                 orderView,
                 lines,
                 subTotal,
-                TAX_RATE_PCT,
-                taxAmount,
-                total,
+                null,        // no computed tax rate — we only show the aggregator's stated GST amount
+                gst,
+                grandTotal,
                 o.getCurrency() != null ? o.getCurrency() : "INR"
         );
     }
