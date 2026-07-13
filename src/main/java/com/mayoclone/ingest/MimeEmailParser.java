@@ -109,7 +109,10 @@ public class MimeEmailParser {
     private static String extractBody(Part part) throws Exception {
         String plain = findByType(part, "text/plain");
         if (plain != null && !plain.isBlank()) {
-            return plain;
+            // Plain-text parts of these aggregator emails STILL carry HTML entities
+            // (e.g. "&#x20b9; 510" for ₹510) — decode them or every amount/price regex
+            // grabs stray digits out of the entity (the "20" in "&#x20b9;").
+            return decodeEntities(plain);
         }
         String html = findByType(part, "text/html");
         if (html != null && !html.isBlank()) {
@@ -118,7 +121,7 @@ public class MimeEmailParser {
         // Last resort: a non-multipart part whose content is a String.
         Object content = part.getContent();
         if (content instanceof String s) {
-            return part.isMimeType("text/html") ? stripHtml(s) : s;
+            return part.isMimeType("text/html") ? stripHtml(s) : decodeEntities(s);
         }
         return "";
     }
@@ -175,6 +178,17 @@ public class MimeEmailParser {
         String s = SCRIPT_STYLE.matcher(html).replaceAll(" ");
         s = BLOCK_BREAK.matcher(s).replaceAll("\n");
         s = ANY_TAG.matcher(s).replaceAll("");
+        s = decodeEntities(s);
+        // Collapse trailing spaces per line and squeeze runs of blank lines.
+        StringBuilder out = new StringBuilder(s.length());
+        for (String line : s.split("\n")) {
+            out.append(line.strip()).append('\n');
+        }
+        return MANY_BLANK_LINES.matcher(out.toString()).replaceAll("\n\n").strip();
+    }
+
+    /** Decode named + numeric HTML entities. Applied to BOTH html-stripped and plain bodies. */
+    static String decodeEntities(String s) {
         s = s.replace("&nbsp;", " ")
                 .replace("&amp;", "&")
                 .replace("&lt;", "<")
@@ -182,16 +196,10 @@ public class MimeEmailParser {
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
                 .replace("&rupee;", "₹");
-        // Decode ALL numeric HTML entities — decimal &#8377; AND hex &#x20b9; (both are ₹,
-        // real IRCTC/aggregator emails use the hex form). Without this, currency symbols
-        // survive as "&#x20b9;" and every amount/price regex misses, so amounts read as 0.
-        s = decodeNumericEntities(s);
-        // Collapse trailing spaces per line and squeeze runs of blank lines.
-        StringBuilder out = new StringBuilder(s.length());
-        for (String line : s.split("\n")) {
-            out.append(line.strip()).append('\n');
-        }
-        return MANY_BLANK_LINES.matcher(out.toString()).replaceAll("\n\n").strip();
+        // Decimal &#8377; AND hex &#x20b9; are both ₹ — real aggregator emails use either,
+        // in HTML *and* plain-text parts. Without this, amount/price regexes grab stray
+        // digits out of the entity (e.g. "20" from "&#x20b9;", "8377" from "&#8377;").
+        return decodeNumericEntities(s);
     }
 
     private static final Pattern NUMERIC_ENTITY = Pattern.compile("&#(x)?([0-9a-fA-F]+);");
