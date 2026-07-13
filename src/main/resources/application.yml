@@ -146,25 +146,25 @@ mayoclone:
   enrich:
     # Dashboard order-enrichment (OFF by default). IRCTC eCatering confirmation emails
     # carry NO passenger name; when enabled, a freshly-ingested order with a known vendor
-    # but no name enqueues a DASHBOARD_ENRICH job that logs into the vendor dashboard
-    # (plain username+password — no CAPTCHA/OTP) and back-fills the name by external
-    # order id. EVERYTHING here is blank/false by default → zero regression: nothing is
-    # enqueued and the scraper is idle. Fill in the IRCTC endpoints below to go live.
+    # but no name enqueues a DASHBOARD_ENRICH job that logs into the IRCTC eCatering
+    # partner API (plain mobile+password — no CAPTCHA/OTP) and back-fills the name by
+    # external order id. The IRCTC endpoints below ship with WORKING defaults — flip
+    # `enabled` on and store per-vendor credentials (encrypted) to go live. Default OFF ⇒
+    # zero regression: nothing is enqueued and the scraper is idle.
     enabled: ${MAYOCLONE_ENRICH_ENABLED:false}
     # Default provider key (matches VendorDashboardCredential.provider + the scraper).
     engine: ${MAYOCLONE_ENRICH_ENGINE:IRCTC_ECATERING}
     # Politeness floor (ms) between dashboard hits.
     min-interval-ms: ${MAYOCLONE_ENRICH_MIN_INTERVAL_MS:1500}
     irctc:
-      # POST target for username+password login. BLANK → scraper cannot log in (idle).
-      # Fill with the real IRCTC eCatering partner login endpoint.
-      login-url: ${MAYOCLONE_ENRICH_IRCTC_LOGIN_URL:}
-      # Order-lookup URL; the token {orderId} is replaced with the external order id.
-      # BLANK → nothing looked up. e.g. https://.../partner/order/{orderId}
-      order-url: ${MAYOCLONE_ENRICH_IRCTC_ORDER_URL:}
-      # Dotted JSON path to the passenger name in the lookup response. BLANK → the
-      # scraper falls back to customer.fullName.
-      name-json-path: ${MAYOCLONE_ENRICH_IRCTC_NAME_JSON_PATH:}
+      # Fixed IRCTC eCatering API root. Login + order-detail paths hang off this.
+      base-url: ${MAYOCLONE_ENRICH_IRCTC_BASE_URL:https://www.ecatering.irctc.co.in/api/v1}
+      # Login POST path (relative to base-url). Body {"mobile":..,"password":..}; the
+      # response Set-Cookie: X-AUTH=<token> is captured as the session.
+      login-path: ${MAYOCLONE_ENRICH_IRCTC_LOGIN_PATH:/auth/user/login}
+      # Order-detail GET path (relative to base-url); {orderId} → external order id.
+      # Sent with header Cookie: X-AUTH=<captured token>.
+      order-path: ${MAYOCLONE_ENRICH_IRCTC_ORDER_PATH:/order/{orderId}}
   jwt:
     # DEV DEFAULT ONLY — prod MUST set MAYOCLONE_JWT_SECRET to a strong 32+ byte secret.
     secret: ${MAYOCLONE_JWT_SECRET:dev-insecure-jwt-secret-change-me-please-0123456789abcdef}
