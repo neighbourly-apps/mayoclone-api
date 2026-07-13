@@ -55,9 +55,16 @@ public class OrderService {
      * account-scoped, ordered result set.
      */
     public List<OrderDto> list(String aggregatorCode, String station, LocalDate date, String trainNumber,
-                               OrderStatus status, OrderType orderType, PaymentMode paymentMode, Long riderId) {
+                               OrderStatus status, OrderType orderType, PaymentMode paymentMode, Long riderId,
+                               Boolean needsReview) {
         Long accountId = currentAccount.accountId();
-        return orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId).stream()
+        // When the review filter is set, query it at the DB (indexed on account_id,
+        // needs_review); otherwise pull the full account-scoped set. Remaining filters
+        // are applied in-memory over the ordered result.
+        List<IrctcOrder> base = needsReview == null
+                ? orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId)
+                : orderRepo.findByAccountIdAndNeedsReviewOrderByPlacedAtDesc(accountId, needsReview);
+        return base.stream()
                 .filter(o -> aggregatorCode == null
                         || (o.getAggregator() != null
                         && aggregatorCode.equalsIgnoreCase(o.getAggregator().getCode())))
@@ -74,6 +81,16 @@ public class OrderService {
 
     public OrderDto get(Long id) {
         return mapper.toDto(find(id));
+    }
+
+    /**
+     * The raw source email behind an order (tenant-scoped; cross-tenant id -> 404).
+     * Kept separate from the list DTO because {@code rawEmail} is large. Lets an
+     * operator read/re-parse the original when a parse looked low-confidence.
+     */
+    public com.mayoclone.dto.OrderRawDto raw(Long id) {
+        IrctcOrder o = find(id);
+        return new com.mayoclone.dto.OrderRawDto(o.getId(), o.getSubject(), null, o.getRawEmail());
     }
 
     /**

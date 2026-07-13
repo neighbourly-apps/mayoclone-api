@@ -22,6 +22,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -106,7 +107,10 @@ public class IngestionCore {
             return new IngestResult(1, 0);
         }
 
-        IrctcOrder saved = orderRepo.save(toEntity(parsed, agg.get(), accountId, vendorId, msg.body()));
+        IrctcOrder entity = toEntity(parsed, agg.get(), accountId, vendorId, msg.body());
+        // Flag (never hide) a low-confidence parse. The order is ALWAYS saved.
+        applyReviewVerdict(entity, agg.get());
+        IrctcOrder saved = orderRepo.save(entity);
         metrics.orderIngested(agg.get().getCode(), sourceType == null ? null : sourceType.name());
         // Record the initial NEW status event + push a realtime NEW_ORDER event.
         orderCommandService.recordCreated(saved);
@@ -122,7 +126,8 @@ public class IngestionCore {
         f.setFromAddress(msg.from());
         f.setSubject(truncate(msg.subject(), 1000));
         f.setReason(reason);
-        f.setRawSnippet(truncate(msg.body(), SNIPPET_MAX)); // truncated; no secrets in an email body
+        f.setRawSnippet(truncate(msg.body(), SNIPPET_MAX)); // truncated snippet for list views
+        f.setRawBody(msg.body()); // FULL body: the faithful replay source (see IngestFailureService.retry)
         f.setSourceType(sourceType);
         f.setMessageId(truncate(msg.messageId(), 512));
         f.setCreatedAt(Instant.now());
@@ -163,9 +168,57 @@ public class IngestionCore {
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
         o.setItems(p.items());
+        // Retain the FULL raw email untruncated — the ultimate safety net so the
+        // source is always recoverable and re-parseable even if a field parsed wrong.
+        o.setRawEmail(body);
         o.setPlacedAt(Instant.now());
         o.setCreatedAt(Instant.now());
         return o;
+    }
+
+    /**
+     * Compute a low-confidence verdict over an already-built order and stamp
+     * {@code needsReview}/{@code reviewReason} on it. NEVER drops the order — a
+     * flagged order is still saved so an operator can review it rather than losing
+     * it behind a bad parse. Reasons are concatenated with "; ".
+     */
+    private void applyReviewVerdict(IrctcOrder o, Aggregator aggregator) {
+        List<String> reasons = new ArrayList<>();
+        if (o.getItems() == null || o.getItems().isEmpty()) {
+            reasons.add("no items parsed");
+        }
+        if (o.getAmount() == null || o.getAmount().signum() <= 0) {
+            reasons.add("amount missing/zero");
+        }
+        if (isBlank(o.getTrainNumber())) {
+            reasons.add("train number missing");
+        }
+        if (isBlank(o.getDeliveryStationCode()) && isBlank(o.getDeliveryStationName())) {
+            reasons.add("delivery station missing");
+        }
+        if (looksGenerated(o.getExternalOrderId(), aggregator.getCode())) {
+            reasons.add("order id not found (generated)");
+        }
+        if (!reasons.isEmpty()) {
+            o.setNeedsReview(true);
+            o.setReviewReason(String.join("; ", reasons));
+        }
+    }
+
+    /**
+     * The generic parser falls back to {@code <AGGCODE>-<digits>} (hashed messageId)
+     * when it finds no real order id. Detect that synthesized shape so the order is
+     * flagged for review rather than trusted.
+     */
+    private static boolean looksGenerated(String externalOrderId, String aggregatorCode) {
+        if (externalOrderId == null || aggregatorCode == null || aggregatorCode.isBlank()) {
+            return false;
+        }
+        return Pattern.compile("^" + Pattern.quote(aggregatorCode) + "-\\d+$").matcher(externalOrderId).matches();
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
     }
 
     /**

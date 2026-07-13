@@ -14,7 +14,8 @@ public record IngestFailureDto(
         String rawSnippet,
         String sourceType,
         String messageId,
-        Instant createdAt
+        Instant createdAt,
+        Instant resolvedAt
 ) {
 
     public static IngestFailureDto from(IngestFailure f) {
@@ -27,7 +28,8 @@ public record IngestFailureDto(
                 f.getRawSnippet(),
                 f.getSourceType() == null ? null : f.getSourceType().name(),
                 f.getMessageId(),
-                f.getCreatedAt()
+                f.getCreatedAt(),
+                f.getResolvedAt()
         );
     }
 }

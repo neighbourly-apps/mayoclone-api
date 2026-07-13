@@ -51,7 +51,8 @@ public class OrderController {
      * List orders newest first. All filters optional and combinable:
      * {@code aggregatorCode}, {@code station} (delivery station code),
      * {@code date} (delivery date), {@code trainNumber}, {@code status},
-     * {@code orderType}, {@code paymentMode}, {@code riderId}.
+     * {@code orderType}, {@code paymentMode}, {@code riderId}, {@code needsReview}
+     * (low-confidence-parse review queue).
      */
     @GetMapping
     public List<OrderDto> list(
@@ -62,9 +63,10 @@ public class OrderController {
             @RequestParam(required = false) OrderStatus status,
             @RequestParam(required = false) OrderType orderType,
             @RequestParam(required = false) PaymentMode paymentMode,
-            @RequestParam(required = false) Long riderId) {
+            @RequestParam(required = false) Long riderId,
+            @RequestParam(required = false) Boolean needsReview) {
         return orderService.list(aggregatorCode, station, date, trainNumber,
-                status, orderType, paymentMode, riderId);
+                status, orderType, paymentMode, riderId, needsReview);
     }
 
     @GetMapping("/stats")
@@ -94,6 +96,12 @@ public class OrderController {
     @GetMapping("/{id}")
     public OrderDto get(@PathVariable Long id) {
         return orderService.get(id);
+    }
+
+    /** The raw source email behind an order (for reviewing/re-parsing a flagged order). */
+    @GetMapping("/{id}/raw")
+    public com.mayoclone.dto.OrderRawDto raw(@PathVariable Long id) {
+        return orderService.raw(id);
     }
 
     @GetMapping("/{id}/invoice")

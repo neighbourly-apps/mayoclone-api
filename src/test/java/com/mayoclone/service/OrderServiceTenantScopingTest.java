@@ -51,7 +51,7 @@ class OrderServiceTenantScopingTest {
         when(currentAccount.accountId()).thenReturn(55L);
         when(orderRepo.findByAccountIdOrderByPlacedAtDesc(55L)).thenReturn(List.of());
 
-        service.list(null, null, null, null, null, null, null, null);
+        service.list(null, null, null, null, null, null, null, null, null);
 
         verify(orderRepo).findByAccountIdOrderByPlacedAtDesc(eq(55L));
     }

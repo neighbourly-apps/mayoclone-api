@@ -17,6 +17,9 @@ public interface IrctcOrderRepository extends JpaRepository<IrctcOrder, Long> {
 
     List<IrctcOrder> findByAccountIdOrderByPlacedAtDesc(Long accountId);
 
+    /** Review-queue filter: a tenant's orders flagged (or not) for manual review, newest first. */
+    List<IrctcOrder> findByAccountIdAndNeedsReviewOrderByPlacedAtDesc(Long accountId, boolean needsReview);
+
     Optional<IrctcOrder> findByIdAndAccountId(Long id, Long accountId);
 
     /** A rider's orders whose delivery date falls in [from, to] inclusive (SLA/performance). */

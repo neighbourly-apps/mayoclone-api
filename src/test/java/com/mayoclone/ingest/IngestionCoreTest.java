@@ -5,6 +5,7 @@ import com.mayoclone.domain.IngestFailure;
 import com.mayoclone.domain.IngestFailureReason;
 import com.mayoclone.domain.IrctcOrder;
 import com.mayoclone.domain.MailSourceType;
+import com.mayoclone.domain.OrderItem;
 import com.mayoclone.dto.IngestResult;
 import com.mayoclone.observability.AppMetrics;
 import com.mayoclone.parser.IrctcEmailParser;
@@ -23,6 +24,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -129,6 +132,90 @@ class IngestionCoreTest {
         verify(failureRepo, never()).save(any());
     }
 
+    @Test
+    void orderWithNoItemsIsStillSavedButFlaggedForReview() {
+        Aggregator agg = agg();
+        when(aggregatorService.findBySender(any())).thenReturn(Optional.of(agg));
+        when(parser.supports(any(), any(), any())).thenReturn(true);
+        // parsed() carries an empty items list.
+        when(parser.parse(any(), any(), any(), any(), any())).thenReturn(parsed());
+        when(orderRepo.existsBySourceMessageId(any())).thenReturn(false);
+        when(orderRepo.existsByAggregatorAndExternalOrderId(any(), any())).thenReturn(false);
+
+        core.process(3L, 4L, MailSourceType.IMAP, msg());
+
+        ArgumentCaptor<IrctcOrder> captor = ArgumentCaptor.forClass(IrctcOrder.class);
+        verify(orderRepo).save(captor.capture());
+        IrctcOrder saved = captor.getValue();
+        assertTrue(saved.isNeedsReview(), "an order with no items must be flagged, not dropped");
+        assertTrue(saved.getReviewReason().contains("no items parsed"), saved.getReviewReason());
+        // Ultimate safety net: the full raw body is retained on the order.
+        assertEquals("body", saved.getRawEmail());
+    }
+
+    @Test
+    void orderWithZeroAmountIsStillSavedButFlaggedForReview() {
+        Aggregator agg = agg();
+        when(aggregatorService.findBySender(any())).thenReturn(Optional.of(agg));
+        when(parser.supports(any(), any(), any())).thenReturn(true);
+        when(parser.parse(any(), any(), any(), any(), any())).thenReturn(
+                withItemsAndAmount(List.of(new OrderItem("Veg Biryani", 1, new BigDecimal("180"))),
+                        BigDecimal.ZERO));
+        when(orderRepo.existsBySourceMessageId(any())).thenReturn(false);
+        when(orderRepo.existsByAggregatorAndExternalOrderId(any(), any())).thenReturn(false);
+
+        core.process(3L, 4L, MailSourceType.IMAP, msg());
+
+        ArgumentCaptor<IrctcOrder> captor = ArgumentCaptor.forClass(IrctcOrder.class);
+        verify(orderRepo).save(captor.capture());
+        IrctcOrder saved = captor.getValue();
+        assertTrue(saved.isNeedsReview());
+        assertTrue(saved.getReviewReason().contains("amount missing/zero"), saved.getReviewReason());
+    }
+
+    @Test
+    void generatedOrderIdIsFlaggedForReview() {
+        Aggregator agg = agg();
+        when(aggregatorService.findBySender(any())).thenReturn(Optional.of(agg));
+        when(parser.supports(any(), any(), any())).thenReturn(true);
+        // externalOrderId of the synthesized <AGGCODE>-<digits> shape.
+        when(parser.parse(any(), any(), any(), any(), any())).thenReturn(
+                new ParsedOrder("ZOOP", "ZOOP-123456", "1234567890", "12951", "Rajdhani",
+                        "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
+                        null, "13:00-13:30", new BigDecimal("450"), "INR", "CONFIRMED",
+                        List.of(new OrderItem("Veg Biryani", 1, new BigDecimal("180"))),
+                        "Order", "<mid@x>", "PREPAID", null));
+        when(orderRepo.existsBySourceMessageId(any())).thenReturn(false);
+        when(orderRepo.existsByAggregatorAndExternalOrderId(any(), any())).thenReturn(false);
+
+        core.process(3L, 4L, MailSourceType.IMAP, msg());
+
+        ArgumentCaptor<IrctcOrder> captor = ArgumentCaptor.forClass(IrctcOrder.class);
+        verify(orderRepo).save(captor.capture());
+        assertTrue(captor.getValue().isNeedsReview());
+        assertTrue(captor.getValue().getReviewReason().contains("order id not found (generated)"),
+                captor.getValue().getReviewReason());
+    }
+
+    @Test
+    void cleanOrderIsNotFlaggedForReview() {
+        Aggregator agg = agg();
+        when(aggregatorService.findBySender(any())).thenReturn(Optional.of(agg));
+        when(parser.supports(any(), any(), any())).thenReturn(true);
+        when(parser.parse(any(), any(), any(), any(), any())).thenReturn(
+                withItemsAndAmount(List.of(new OrderItem("Veg Biryani", 2, new BigDecimal("180"))),
+                        new BigDecimal("360")));
+        when(orderRepo.existsBySourceMessageId(any())).thenReturn(false);
+        when(orderRepo.existsByAggregatorAndExternalOrderId(any(), any())).thenReturn(false);
+
+        core.process(3L, 4L, MailSourceType.IMAP, msg());
+
+        ArgumentCaptor<IrctcOrder> captor = ArgumentCaptor.forClass(IrctcOrder.class);
+        verify(orderRepo).save(captor.capture());
+        assertFalse(captor.getValue().isNeedsReview(), "a complete parse must NOT be flagged");
+        assertEquals(null, captor.getValue().getReviewReason());
+    }
+
     private static Aggregator agg() {
         Aggregator a = new Aggregator();
         a.setCode("ZOOP");
@@ -140,5 +227,13 @@ class IngestionCoreTest {
                 "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
                 null, "13:00-13:30", new BigDecimal("450"), "INR", "CONFIRMED",
                 List.of(), "Order", "<mid@x>", "PREPAID", null);
+    }
+
+    /** A complete parse (real order id, train, station, passenger) with tunable items/amount. */
+    private static ParsedOrder withItemsAndAmount(List<OrderItem> items, BigDecimal amount) {
+        return new ParsedOrder("ZOOP", "EXT-9", "1234567890", "12951", "Rajdhani",
+                "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
+                null, "13:00-13:30", amount, "INR", "CONFIRMED",
+                items, "Order", "<mid@x>", "PREPAID", null);
     }
 }

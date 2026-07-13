@@ -45,9 +45,21 @@ public class IngestFailure {
     @Column(nullable = false, length = 32)
     private IngestFailureReason reason;
 
-    /** Truncated body snippet for triage — NEVER secrets. */
+    /** Truncated body snippet for triage/list views — NEVER secrets. */
     @Column(name = "raw_snippet", length = 2000)
     private String rawSnippet;
+
+    /**
+     * The FULL, untruncated body — the replay source. When a new aggregator/parser
+     * is added, the stored email can be re-ingested faithfully (a truncated snippet
+     * could not be re-parsed).
+     */
+    @Column(name = "raw_body", columnDefinition = "text")
+    private String rawBody;
+
+    /** Set when a retry re-ingested this message successfully (audit trail); null while unresolved. */
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "source_type", length = 32)
@@ -116,6 +128,22 @@ public class IngestFailure {
 
     public void setRawSnippet(String rawSnippet) {
         this.rawSnippet = rawSnippet;
+    }
+
+    public String getRawBody() {
+        return rawBody;
+    }
+
+    public void setRawBody(String rawBody) {
+        this.rawBody = rawBody;
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public void setResolvedAt(Instant resolvedAt) {
+        this.resolvedAt = resolvedAt;
     }
 
     public MailSourceType getSourceType() {

@@ -81,17 +81,19 @@ class IngestionReviewQueueIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void retryThatNowSucceedsRemovesFailureAndCreatesOrder() throws Exception {
+    void retryThatNowSucceedsMarksFailureResolvedAndCreatesOrder() throws Exception {
         Account account = newAccount();
         Long accountId = account.getId();
 
-        // A previously dead-lettered message that will now parse cleanly.
+        // A previously dead-lettered message that will now parse cleanly. The full
+        // body lives in rawBody — the faithful replay source.
         IngestFailure failure = new IngestFailure();
         failure.setAccountId(accountId);
         failure.setFromAddress("orders@zoopindia.com");
         failure.setSubject("Zoop order confirmed");
         failure.setReason(IngestFailureReason.NO_AGGREGATOR_MATCH);
         failure.setRawSnippet(zoopBody());
+        failure.setRawBody(zoopBody());
         failure.setSourceType(MailSourceType.FORWARDING);
         failure.setMessageId("<retry-1@zoopindia.com>");
         failure.setCreatedAt(Instant.now());
@@ -101,9 +103,40 @@ class IngestionReviewQueueIntegrationTest extends AbstractIntegrationTest {
         IngestResult result = ingestFailureService.retry(failureId);
 
         assertEquals(1, result.newOrders());
-        assertTrue(failureRepo.findByIdAndAccountId(failureId, accountId).isEmpty(),
-                "the failure row is removed after a successful retry");
+        // Audit trail: the row is kept but stamped resolvedAt (not deleted).
+        IngestFailure resolved = failureRepo.findByIdAndAccountId(failureId, accountId).orElseThrow();
+        assertTrue(resolved.getResolvedAt() != null, "resolvedAt is stamped after a successful retry");
         assertEquals(1, orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId).size());
+    }
+
+    @Test
+    void retryThatStillFailsKeepsOriginalFailedAndDropsDuplicate() throws Exception {
+        Account account = newAccount();
+        Long accountId = account.getId();
+
+        // An unknown sender that will never route — stays un-ingestable on retry.
+        IngestFailure failure = new IngestFailure();
+        failure.setAccountId(accountId);
+        failure.setFromAddress("orders@unknown-domain.example");
+        failure.setSubject("mystery");
+        failure.setReason(IngestFailureReason.NO_AGGREGATOR_MATCH);
+        failure.setRawSnippet("body");
+        failure.setRawBody("body");
+        failure.setSourceType(MailSourceType.FORWARDING);
+        failure.setMessageId("<retry-still-fails@x>");
+        failure.setCreatedAt(Instant.now());
+        Long failureId = failureRepo.save(failure).getId();
+
+        authenticateAs(account);
+        IngestResult result = ingestFailureService.retry(failureId);
+
+        assertEquals(0, result.newOrders());
+        // Original stays in the queue, still unresolved; no duplicate accumulates.
+        IngestFailure still = failureRepo.findByIdAndAccountId(failureId, accountId).orElseThrow();
+        assertTrue(still.getResolvedAt() == null, "an un-ingestable retry stays failed");
+        assertEquals(1, failureRepo.findByAccountIdOrderByCreatedAtDesc(accountId).size(),
+                "the retry's duplicate dead-letter is dropped");
+        assertEquals(0, orderRepo.findByAccountIdOrderByPlacedAtDesc(accountId).size());
     }
 
     private Account newAccount() {

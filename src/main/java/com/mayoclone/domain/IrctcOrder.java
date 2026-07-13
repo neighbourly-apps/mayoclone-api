@@ -45,7 +45,8 @@ import java.util.List;
                 @Index(name = "idx_order_account_station", columnList = "account_id, delivery_station_code"),
                 @Index(name = "idx_order_account_date", columnList = "account_id, delivery_date"),
                 @Index(name = "idx_order_account_status", columnList = "account_id, status"),
-                @Index(name = "idx_order_account_rider", columnList = "account_id, rider_id")
+                @Index(name = "idx_order_account_rider", columnList = "account_id, rider_id"),
+                @Index(name = "idx_order_account_review", columnList = "account_id, needs_review")
         }
 )
 public class IrctcOrder {
@@ -136,6 +137,26 @@ public class IrctcOrder {
             joinColumns = @JoinColumn(name = "order_id")
     )
     private List<OrderItem> items = new ArrayList<>();
+
+    /**
+     * The FULL, untruncated raw email body this order was parsed from. The ultimate
+     * safety net: even if a field parsed wrong, the source is always recoverable and
+     * re-parseable. Not exposed in the list DTO (too big) — see GET /api/orders/{id}/raw.
+     */
+    @Column(name = "raw_email", columnDefinition = "text")
+    private String rawEmail;
+
+    /**
+     * True when the parse looked low-confidence (missing items/amount/train/station, or
+     * a generated order id). The order is ALWAYS still saved — this flags it for an
+     * operator to review instead of hiding it behind a bad parse.
+     */
+    @Column(name = "needs_review", nullable = false)
+    private boolean needsReview = false;
+
+    /** Concise, human-readable reason(s) the order was flagged; null when clean. */
+    @Column(name = "review_reason", length = 500)
+    private String reviewReason;
 
     public IrctcOrder() {
     }
@@ -394,5 +415,29 @@ public class IrctcOrder {
 
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    public String getRawEmail() {
+        return rawEmail;
+    }
+
+    public void setRawEmail(String rawEmail) {
+        this.rawEmail = rawEmail;
+    }
+
+    public boolean isNeedsReview() {
+        return needsReview;
+    }
+
+    public void setNeedsReview(boolean needsReview) {
+        this.needsReview = needsReview;
+    }
+
+    public String getReviewReason() {
+        return reviewReason;
+    }
+
+    public void setReviewReason(String reviewReason) {
+        this.reviewReason = reviewReason;
     }
 }
