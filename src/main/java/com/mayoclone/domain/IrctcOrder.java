@@ -95,6 +95,19 @@ public class IrctcOrder {
     @Column(name = "amount_to_collect")
     private BigDecimal amountToCollect;
 
+    /** Bill breakdown parsed from the email; each nullable when the line is absent. {@link #amount} stays the grand total. */
+    @Column(name = "subtotal_amount")
+    private BigDecimal subtotalAmount;
+
+    @Column(name = "gst_amount")
+    private BigDecimal gstAmount;
+
+    @Column(name = "delivery_fee")
+    private BigDecimal deliveryFee;
+
+    @Column(name = "discount_amount")
+    private BigDecimal discountAmount;
+
     /** How the order entered the system (default ONLINE for ingested orders). */
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -319,6 +332,38 @@ public class IrctcOrder {
 
     public void setAmountToCollect(BigDecimal amountToCollect) {
         this.amountToCollect = amountToCollect;
+    }
+
+    public BigDecimal getSubtotalAmount() {
+        return subtotalAmount;
+    }
+
+    public void setSubtotalAmount(BigDecimal subtotalAmount) {
+        this.subtotalAmount = subtotalAmount;
+    }
+
+    public BigDecimal getGstAmount() {
+        return gstAmount;
+    }
+
+    public void setGstAmount(BigDecimal gstAmount) {
+        this.gstAmount = gstAmount;
+    }
+
+    public BigDecimal getDeliveryFee() {
+        return deliveryFee;
+    }
+
+    public void setDeliveryFee(BigDecimal deliveryFee) {
+        this.deliveryFee = deliveryFee;
+    }
+
+    public BigDecimal getDiscountAmount() {
+        return discountAmount;
+    }
+
+    public void setDiscountAmount(BigDecimal discountAmount) {
+        this.discountAmount = discountAmount;
     }
 
     public OrderType getOrderType() {

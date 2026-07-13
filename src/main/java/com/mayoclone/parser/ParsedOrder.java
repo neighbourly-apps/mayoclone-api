@@ -31,6 +31,11 @@ public record ParsedOrder(
         /** "COD" | "PREPAID" | "PAID" | null when the email gives no signal. */
         String paymentMode,
         /** Cash to collect on delivery (₹0 for fully-prepaid); null when unknown. */
-        BigDecimal amountToCollect
+        BigDecimal amountToCollect,
+        /** Bill breakdown, each nullable when the email gives no such line. {@link #amount} stays the grand total. */
+        BigDecimal subtotalAmount,
+        BigDecimal gstAmount,
+        BigDecimal deliveryFee,
+        BigDecimal discountAmount
 ) {
 }

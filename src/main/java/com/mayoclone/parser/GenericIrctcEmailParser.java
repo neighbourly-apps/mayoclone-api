@@ -231,8 +231,34 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
                 subject,
                 messageId,
                 paymentMode,
-                toCollect
+                toCollect,
+                extractSubtotal(safeBody),
+                extractGst(safeBody),
+                extractDeliveryFee(safeBody),
+                extractDiscount(safeBody)
         );
+    }
+
+    // ---- bill breakdown -----------------------------------------------------
+
+    /** Sub Total / Subtotal / Base Price Total line; null when absent. */
+    protected BigDecimal extractSubtotal(String body) {
+        return labelMoney(body, "sub\\s*total|base\\s*price\\s*total");
+    }
+
+    /** GST line; null when absent. */
+    protected BigDecimal extractGst(String body) {
+        return labelMoney(body, "gst");
+    }
+
+    /** Delivery Charge / Delivery Fee line; null when absent. */
+    protected BigDecimal extractDeliveryFee(String body) {
+        return labelMoney(body, "delivery\\s*(?:charge|fee)");
+    }
+
+    /** Discount line; null when the label is absent OR carries no number (e.g. "Discount* ₹"). */
+    protected BigDecimal extractDiscount(String body) {
+        return labelMoney(body, "discount");
     }
 
     // ---- order id -----------------------------------------------------------
@@ -257,11 +283,30 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
 
     /** @return {trainNumber, trainName}; either may be null. */
     protected String[] extractTrain(String body) {
+        String[] horizontal = new String[]{null, null};
         Matcher m = TRAIN.matcher(body);
-        if (!m.find()) {
-            return new String[]{null, null};
+        if (m.find()) {
+            horizontal = splitTrain(m.group(1).trim());
         }
-        String seg = m.group(1).trim();
+        // A real train number inline wins immediately.
+        if (horizontal[0] != null) {
+            return horizontal;
+        }
+        // Vertical layout: "TRAIN No" on one line, "12190" (or "12612 / MAS GARIB RATH")
+        // on the next. The horizontal TRAIN regex can't cross the newline (and worse,
+        // it captures the bare "No" label as a spurious name), so recover here.
+        for (String cand : labelValues(body, "train\\s*no\\.?(?:/name)?|train\\s*number|train\\s*name|train")) {
+            String[] t = splitTrain(cand);
+            if (t[0] != null || t[1] != null) {
+                return t;
+            }
+        }
+        return horizontal;
+    }
+
+    /** Split a train cell like "22538 / KUSHINAGAR EXP" into {number, name}. */
+    private static String[] splitTrain(String seg) {
+        seg = seg.trim();
         Matcher num = FIVE_DIGITS.matcher(seg);
         String number = num.find() ? num.group() : null;
         String name = seg.replaceFirst("\\d{5}", "").replaceAll("[/:]", " ").replaceAll("\\s+", " ").trim();
@@ -276,7 +321,10 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             return m.group(1);
         }
         Matcher c = COACH_ONLY.matcher(body);
-        return c.find() ? c.group(1) : null;
+        if (c.find()) {
+            return c.group(1);
+        }
+        return verticalCoachSeat(body)[0];
     }
 
     protected String extractSeat(String body) {
@@ -284,7 +332,28 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         if (m.find()) {
             return m.group(2);
         }
+        String seat = verticalCoachSeat(body)[1];
+        if (seat != null) {
+            return seat;
+        }
         return extractGroup(BERTH, body, null);
+    }
+
+    // Combined coach/seat when it sits on its OWN value line ("B5/ 64", "M1/74",
+    // "G4/65"), reached from the "COACH NO / SEAT NO" (etc.) label on the line above.
+    private static final Pattern COACH_SEAT_VALUE = Pattern.compile(
+            "(?:[A-Za-z]{2,3}[/\\-])?" + H + "*([A-Za-z]{1,2}\\d{1,2})" + H + "*[/\\-]" + H + "*(\\d{1,3})");
+
+    /** @return {coach, seat} parsed from the vertical value line; either may be null. */
+    private String[] verticalCoachSeat(String body) {
+        for (String cand : labelValues(body,
+                "coach\\s*no\\.?\\s*/\\s*seat\\s*no\\.?|coach\\s*/?\\s*seat|coach\\s*/?\\s*berth|coach")) {
+            Matcher m = COACH_SEAT_VALUE.matcher(cand);
+            if (m.find()) {
+                return new String[]{m.group(1), m.group(2)};
+            }
+        }
+        return new String[]{null, null};
     }
 
     // ---- station ------------------------------------------------------------
@@ -292,7 +361,21 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     /** @return {deliveryStationCode, deliveryStationName}; either may be null. */
     protected String[] extractStation(String body) {
         Matcher m = STATION.matcher(body);
-        return m.find() ? parseStation(m.group(1).trim()) : new String[]{null, null};
+        if (m.find()) {
+            String v = m.group(1).trim();
+            // Guard: in the vertical layout the label's trailing space is all that
+            // precedes the newline, so the horizontal regex can capture a blank cell.
+            if (!v.isEmpty()) {
+                return parseStation(v);
+            }
+        }
+        // Vertical layout: "DELIVERY STATION" then the value on the next line.
+        for (String cand : labelValues(body, "delivery\\s*station|station\\s*name(?:\\s*&?\\s*code)?|station")) {
+            if (!cand.isBlank()) {
+                return parseStation(cand.trim());
+            }
+        }
+        return new String[]{null, null};
     }
 
     /**
@@ -376,9 +459,13 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     protected LocalDate extractDeliveryDate(String body) {
         // Journey date wins (F1/F4 differ from ETA); then Delivery Date, then the
         // date embedded in Delivery Time, then any "Delivery …" line, then any date.
+        // Each inline (same-line) lookup has a vertical (next-line) sibling.
         LocalDate d = findDate(body, "journey" + S + "*date");
+        if (d == null) d = dateFromLabel(body, "journey\\s*date");
         if (d == null) d = findDate(body, "delivery" + S + "*date");
+        if (d == null) d = dateFromLabel(body, "delivery\\s*date");
         if (d == null) d = findDate(body, "delivery" + S + "*time");
+        if (d == null) d = dateFromLabel(body, "delivery\\s*time(?:\\s*\\(eta\\))?");
         if (d == null) d = findDate(body, "delivery");
         if (d == null) d = findDate(body, "");
         return d;
@@ -394,10 +481,26 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         return null;
     }
 
+    /** Vertical date: first {@link #labelValues} candidate that carries a parseable date. */
+    private LocalDate dateFromLabel(String body, String label) {
+        Pattern dp = Pattern.compile("(" + DATE + ")");
+        for (String cand : labelValues(body, label)) {
+            Matcher m = dp.matcher(cand);
+            if (m.find()) {
+                LocalDate d = parseDate(m.group(1).trim());
+                if (d != null) return d;
+            }
+        }
+        return null;
+    }
+
     protected String extractSlot(String body) {
         String t = findTime(body, "delivery" + S + "*time");
+        if (t == null) t = timeFromLabel(body, "delivery\\s*time(?:\\s*\\(eta\\))?");
         if (t == null) t = findTime(body, "delivery" + S + "*date");
+        if (t == null) t = timeFromLabel(body, "delivery\\s*date");
         if (t == null) t = findTime(body, "\\bETA\\b");
+        if (t == null) t = timeFromLabel(body, "eta");
         if (t == null) t = findTime(body, "delivery");
         return t;
     }
@@ -406,6 +509,18 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         Pattern p = Pattern.compile(label + "[^\\r\\n]*?(" + TIME + ")(?::\\d{2})?", Pattern.CASE_INSENSITIVE);
         Matcher m = p.matcher(body);
         return m.find() ? m.group(1).replaceAll("\\s", "") : null;
+    }
+
+    /** Vertical time: first {@link #labelValues} candidate that carries a clock time. */
+    private String timeFromLabel(String body, String label) {
+        Pattern tp = Pattern.compile("(" + TIME + ")(?::\\d{2})?");
+        for (String cand : labelValues(body, label)) {
+            Matcher m = tp.matcher(cand);
+            if (m.find()) {
+                return m.group(1).replaceAll("\\s", "");
+            }
+        }
+        return null;
     }
 
     /** Multi-format date parse; disambiguates numeric dates by their separator. */
@@ -441,6 +556,13 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         if (grand != null) return grand;
         BigDecimal plain = lastGroupMoney(TOTAL_PLAIN, body);
         if (plain != null) return plain;
+        // Vertical layout: a strong total label ("Grand Total", "Order Total",
+        // "Paid Total", …) on one line and its ₹ value on the next. Bare "Total"
+        // is deliberately excluded (RailRestro labels its GST-inclusive grand
+        // "Subtotal" and its food total "Total").
+        BigDecimal vgrand = labelMoney(body,
+                "grand\\s*total|order\\s*total|paid\\s*total|payable\\s*total|net\\s*payable|amount\\s*payable");
+        if (vgrand != null) return vgrand;
         // Fallback: the largest bare currency value in the body.
         Matcher m = AMOUNT.matcher(body);
         BigDecimal best = null;
@@ -453,7 +575,11 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
 
     protected BigDecimal extractToCollect(String body) {
         Matcher m = TO_COLLECT.matcher(body);
-        return m.find() ? parseMoney(m.group(1)) : null;
+        if (m.find()) {
+            return parseMoney(m.group(1));
+        }
+        // Vertical: "Payment to collect" / "(Amount to collect)" then "0" (or "Rs. 0/-") next line.
+        return labelMoney(body, "payment\\s*to\\s*collect|amount\\s*to\\s*collect|balance\\s*to\\s*pay");
     }
 
     // ---- payment mode -------------------------------------------------------
@@ -470,6 +596,13 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     // ---- line items ---------------------------------------------------------
 
     protected List<OrderItem> extractItems(String body) {
+        // Vertical layout first: each item's name, ₹price, qty and ₹amount are on
+        // their OWN lines. Its signature (a currency-only line) never occurs in the
+        // horizontal/tab tables, so this returns empty for those and we fall through.
+        List<OrderItem> vertical = extractVerticalItems(body);
+        if (!vertical.isEmpty()) {
+            return vertical;
+        }
         List<OrderItem> items = extractColumnarItems(body);
         if (!items.isEmpty()) {
             return items;
@@ -483,6 +616,70 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             Matcher a = LINE_ITEM_ALT.matcher(body);
             while (a.find()) {
                 items.add(new OrderItem(a.group(1).trim(), Integer.parseInt(a.group(2)), parseMoney(a.group(3))));
+            }
+        }
+        return items;
+    }
+
+    // A money-only value line: a currency-prefixed number OR a bare decimal. A bare
+    // integer is deliberately NOT money (train no. / qty would false-match).
+    private static final Pattern MONEY_ONLY = Pattern.compile(
+            "^(?:₹|Rs\\.?|INR)" + H + "*[0-9][0-9,]*(?:\\.[0-9]{1,2})?$"
+                    + "|^[0-9][0-9,]*\\.[0-9]{1,2}$", Pattern.CASE_INSENSITIVE);
+    // A quantity-only line: an integer, optionally "xN".
+    private static final Pattern INT_ONLY = Pattern.compile("^x?" + H + "*([0-9]{1,4})$", Pattern.CASE_INSENSITIVE);
+    // A line that can start an item name: it contains a letter.
+    private static final Pattern HAS_LETTER = Pattern.compile("[A-Za-z]");
+
+    /**
+     * Parse items laid out one value per line — the shape real HTML-rendered
+     * aggregator emails arrive in:
+     * <pre>
+     *   Veg Thali
+     *   ₹ 114.32     ← money-only  (unit price)
+     *   1            ← qty         (optional)
+     *   ₹ 114.32     ← money-only  (line amount, consumed)
+     * </pre>
+     * An item starts on a name line (has a letter, not a summary/header label)
+     * IMMEDIATELY followed by a money-only line. Summary rows (Sub Total, GST, …)
+     * and their value lines are skipped, so nothing past the item block is captured.
+     * Returns empty for horizontal/tab tables (their price cells never sit alone on
+     * a line), so the columnar parser stays in charge of those.
+     */
+    private List<OrderItem> extractVerticalItems(String body) {
+        List<OrderItem> items = new ArrayList<>();
+        List<String> lines = nonEmptyLines(body);
+        int i = 0;
+        int n = lines.size();
+        while (i < n) {
+            String line = lines.get(i);
+            // Skip anything that can't be a name: summary labels, money-only,
+            // qty-only, or letterless noise ("-", "₹", "-->").
+            if (isSummaryLine(line) || MONEY_ONLY.matcher(line).matches()
+                    || INT_ONLY.matcher(line).matches() || !HAS_LETTER.matcher(line).find()) {
+                i++;
+                continue;
+            }
+            // A name line only becomes an item when the very next line is its price.
+            if (i + 1 < n && MONEY_ONLY.matcher(lines.get(i + 1)).matches()) {
+                // firstMoney (not parseMoney) so the dot in "Rs." can't leak into the value.
+                BigDecimal price = firstMoney(lines.get(i + 1));
+                int j = i + 2;
+                int qty = 1;
+                if (j < n) {
+                    Matcher q = INT_ONLY.matcher(lines.get(j));
+                    if (q.matches()) {
+                        qty = Integer.parseInt(q.group(1));
+                        j++;
+                    }
+                }
+                if (j < n && MONEY_ONLY.matcher(lines.get(j)).matches()) {
+                    j++; // consume the line-amount cell
+                }
+                items.add(new OrderItem(line, Math.max(qty, 1), price));
+                i = j;
+            } else {
+                i++;
             }
         }
         return items;
@@ -651,5 +848,73 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
 
     protected BigDecimal parseMoney(String raw) {
         return new BigDecimal(raw.replaceAll("[^0-9.]", ""));
+    }
+
+    // ---- vertical (one-value-per-line) layout helpers -----------------------
+
+    /** Body split into trimmed, non-empty lines (the vertical layout's cells). */
+    private static List<String> nonEmptyLines(String body) {
+        List<String> out = new ArrayList<>();
+        for (String l : body.split("\\r?\\n")) {
+            String s = l.strip();
+            if (!s.isEmpty()) {
+                out.add(s);
+            }
+        }
+        return out;
+    }
+
+    // Leading noise before a value cell: separators, currency-less punctuation.
+    private static final Pattern LEADING_SEP = Pattern.compile("^[\\s:#*.\\-/&;()]+");
+    // First money token in a string: an optional ₹/Rs/INR then a number.
+    private static final Pattern FIRST_MONEY = Pattern.compile(
+            "(?:₹|Rs\\.?|INR)?" + H + "*([0-9][0-9,]*(?:\\.[0-9]{1,2})?)", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Candidate value(s) for a label, covering both layouts: for {@code "Sub Total  ₹ 171.42"}
+     * the value is inline after the label; for a vertical {@code "Sub Total\n₹ 171.42"} it is
+     * the next line. Returns the inline remainder (when non-empty) and the next non-empty line,
+     * so a caller can pick whichever carries the datum it wants. Empty when the label is absent.
+     * The label must match at the START of a line (so packed horizontal rows like
+     * "ORDER No  x  PNR No  y" don't misfire — those are handled by the field regexes).
+     */
+    protected List<String> labelValues(String body, String labelRegex) {
+        Pattern p = Pattern.compile("(?i)^[\\s(]*(?:" + labelRegex + ")\\b(.*)$");
+        List<String> lines = nonEmptyLines(body);
+        for (int i = 0; i < lines.size(); i++) {
+            Matcher m = p.matcher(lines.get(i));
+            if (m.matches()) {
+                List<String> out = new ArrayList<>(2);
+                String inline = LEADING_SEP.matcher(m.group(1)).replaceFirst("").strip();
+                if (!inline.isEmpty()) {
+                    out.add(inline);
+                }
+                if (i + 1 < lines.size()) {
+                    out.add(lines.get(i + 1).strip());
+                }
+                return out;
+            }
+        }
+        return List.of();
+    }
+
+    /** First {@link #labelValues} candidate that carries a money value; null when none does. */
+    protected BigDecimal labelMoney(String body, String labelRegex) {
+        for (String cand : labelValues(body, labelRegex)) {
+            BigDecimal v = firstMoney(cand);
+            if (v != null) {
+                return v;
+            }
+        }
+        return null;
+    }
+
+    /** Parse the first ₹/Rs/INR-or-bare number in {@code s}; null when there is none. */
+    protected BigDecimal firstMoney(String s) {
+        if (s == null) {
+            return null;
+        }
+        Matcher m = FIRST_MONEY.matcher(s);
+        return m.find() ? parseMoney(m.group(1)) : null;
     }
 }

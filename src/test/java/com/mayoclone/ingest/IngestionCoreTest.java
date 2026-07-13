@@ -184,7 +184,7 @@ class IngestionCoreTest {
                         "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
                         null, "13:00-13:30", new BigDecimal("450"), "INR", "CONFIRMED",
                         List.of(new OrderItem("Veg Biryani", 1, new BigDecimal("180"))),
-                        "Order", "<mid@x>", "PREPAID", null));
+                        "Order", "<mid@x>", "PREPAID", null, null, null, null, null));
         when(orderRepo.existsBySourceMessageId(any())).thenReturn(false);
         when(orderRepo.existsByAggregatorAndExternalOrderId(any(), any())).thenReturn(false);
 
@@ -226,7 +226,7 @@ class IngestionCoreTest {
         return new ParsedOrder("ZOOP", "EXT-1", "1234567890", "12951", "Rajdhani",
                 "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
                 null, "13:00-13:30", new BigDecimal("450"), "INR", "CONFIRMED",
-                List.of(), "Order", "<mid@x>", "PREPAID", null);
+                List.of(), "Order", "<mid@x>", "PREPAID", null, null, null, null, null);
     }
 
     /** A complete parse (real order id, train, station, passenger) with tunable items/amount. */
@@ -234,6 +234,6 @@ class IngestionCoreTest {
         return new ParsedOrder("ZOOP", "EXT-9", "1234567890", "12951", "Rajdhani",
                 "B3", "32", "BCT", "NDLS", "New Delhi", "Rajesh", "9876543210",
                 null, "13:00-13:30", amount, "INR", "CONFIRMED",
-                items, "Order", "<mid@x>", "PREPAID", null);
+                items, "Order", "<mid@x>", "PREPAID", null, null, null, null, null);
     }
 }

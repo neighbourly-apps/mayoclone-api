@@ -1,0 +1,115 @@
+Order Confirmation 
+ Dear Zaika Foods, 
+ We have received the COD Order having Order Number 2465354711 on 13-07-2026 
+ 
+ Order details: 
+ 
+ 
+ 
+ ORDER No 
+ 2465354711 
+ PNR No 
+ - 
+ 
+ 
+ MOBILE No 
+ 9818947552 
+ TRAIN No 
+ 12286 
+ 
+ 
+ ALTERNATE MOBILE No 
+ - 
+ Comment 
+ - 
+ 
+ 
+ JOURNEY DATE 
+ 13-07-2026 
+ ORDER DATE 
+ 13-07-2026 
+ 
+ 
+ PAYMENT STATUS 
+ CASH_ON_DELIVERY 
+ COACH NO / SEAT NO 
+ B6/ 30 
+ 
+ 
+ DELIVERY STATION 
+ VIRANGANA LAKSHMIBAI JHANSI JN 
+ DELIVERY TIME 
+ 20:45 
+ 
+ 
+ VENDOR 
+ Zaika Foods 
+ ETA 
+ 13-Jul-2026 20:45 
+ 
+ 
+ 
+
+ Order Item Details: 
+ 
+ 
+ 
+ Item 
+ Price 
+ Quantity 
+ Amount 
+ 
+
+ 
+ 
+ Non Veg Thali 
+ ₹ 161.9 
+ 1 
+ ₹ 161.9 
+ 
+
+ 
+ Sub Total 
+ ₹ 161.9 
+ 
+ 
+ GST 
+ ₹ 8.1 
+ 
+ 
+ Delivery Charge 
+ ₹ 0 
+ 
+ 
+ Discount* 
+ ₹ 
+ 
+ 
+ Grand Total (Inclusive of all taxes) 
+ ₹ 170 
+ 
+ 
+ 
+
+ Note 
+ 
+ In case of COD orders if order contains discount amount for previously undelivered order the discounted amount will credited to the vendors RDS when the order is marked 
+ delivered. 
+ 1.Please take the OTP from customer on delivery and update the delivery status on IRCTC Vendor Dashboard/App. 
+ Please note if PAYMENT MODE is COD (Cash on Delivery) it is vendor's responsibility to collect cash at the time of delivery.
+ In case of Pre-paid no amount should be collected. 
+ 
+ Information 
+ All disputes are subject to the jurisdiction of the Delhi Courts. 
+ Warm Regards,
+ Customer Care
+ eCatering
+ IRCTC 
+
+ 
+ This is a system generated email. Please do not reply to this email ID. If you have a query or need any clarification you
+ may contact us using any of the communication medium described below:
+ 
+ Call our 24-hour Customer Care at 1323 or 
+ SMS MEAL to 139 or 
+ Email Us ecatering.customercare@irctc.com

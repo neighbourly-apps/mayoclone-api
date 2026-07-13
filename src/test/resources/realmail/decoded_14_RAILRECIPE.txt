@@ -1,0 +1,631 @@
+Email for customer 
+ 
+ 
+ 
+ 
+ #outlook a {
+ padding: 0;
+ }
+
+ body {
+ margin: 0;
+ padding: 0;
+ -webkit-text-size-adjust: 100%;
+ -ms-text-size-adjust: 100%;
+ }
+
+ table,
+ td {
+ border-collapse: collapse;
+ mso-table-lspace: 0pt;
+ mso-table-rspace: 0pt;
+ }
+
+ img {
+ border: 0;
+ height: auto;
+ line-height: 100%;
+ outline: none;
+ text-decoration: none;
+ -ms-interpolation-mode: bicubic;
+ }
+
+ p {
+ display: block;
+ margin: 13px 0;
+ }
+ .font-vsm{
+ font-size:16px;
+ }
+ .font-head {
+ font-size: 24px;
+ }
+ 
+
+ 
+ 
+ @import url(https://fonts.googleapis.com/css2?family=Quattrocento:wght@400;700&amp;display=swap);
+ 
+ 
+ 
+ @media only screen and (min-width:480px) {
+ .mj-column-per-100 {
+ width: 100% !important;
+ max-width: 100%;
+ }
+
+ }
+ 
+ 
+ @media only screen and (max-width:480px) {
+ table.mj-full-width-mobile {
+ width: 100% !important;
+ }
+
+ .font-sm {
+ font-size: 12px;
+ }
+ .font-vsm {
+ font-size:12px
+ }
+ .font-head {
+ font-size: 18px;
+ }
+
+ td.mj-full-width-mobile {
+ width: auto !important;
+ }
+ }
+ 
+ 
+ a,
+ span,
+ td,
+ th {
+ -webkit-font-smoothing: antialiased !important;
+ -moz-osx-font-smoothing: grayscale !important;
+ }
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ Dear Zaika Foods , 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ We have received the COD Order having Order Number 1826362 on Jul 13, 2026 
+ 
+ 
+ 
+ 
+ 
+ 
+ Order Details : 
+ 
+ 
+ 
+ 
+ 
+ 
+ Order No.
+ 
+ 
+ 1826362 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ PNR No
+ 
+ 2953991789 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Mobile No.
+ 
+ 8850989379 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Alt. mobile no
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Train No.
+ 
+ 12190 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Coach/Seat
+ 
+ M1/74 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Delivery Station
+ 
+ VGLJ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Delivery Time (ETA)
+ 
+ Jul 13,2026 19:30 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Journey Date
+ 
+ 2026-07-13 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Order Date
+ 
+ Jul 13, 2026 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Comment
+ 
+ Cousin required food in train plz fast and safe delivery 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ PAYMENT STATUS 
+ 
+ 
+ 
+ 
+ CASH_ON_DELIVERY 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+ 
+ Item Name 
+
+ 
+ 
+ Price 
+
+ 
+ 
+ 
+ Quantity 
+ 
+ 
+ 
+ 
+ Amount 
+ 
+ 
+ 
+ 
+ 
+ Paneer pizza 
+ 
+ 
+ 
+ 
+ ₹ 165 
+ 
+ 
+ x1 
+ 
+ 
+ 
+ ₹165 
+ 
+ 
+ 
+ 
+ 
+ Paneer onion capsicum pizza 
+ 
+ 
+ 
+ 
+ ₹ 165 
+ 
+ 
+ x1 
+ 
+ 
+ 
+ ₹165 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Subtotal 
+ 
+ 
+ ₹ 330 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Discount 
+ 
+ 
+ ₹ 0 
+ 
+ 
+ 
+ 
+ 
+ 
+ Delivery Charge 
+ 
+ 
+ ₹ 0 
+ 
+ 
+ 
+ 
+ 
+ 
+ GST 
+ 
+ 
+ ₹ 16.50 
+ 
+ 
+ 
+ 
+ 
+ 
+ -->
+ 
+ Grand Total 
+ 
+ 
+ 
+ 
+ ₹ 346.50 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Please note if PAYMENT MODE is COD (Cash on Delivery) it is vendor's responsibility to collect cash at the time of delivery. In case of Pre-paid no amount should be collected. 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Home   |   About Us   |   Contact 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ Coupon Available: 
+ 
+ USE
+ COUPON 
+ 
+ NEXT10 
+ 
+ 
+ Grab 10% off on Next Order 
+ 
+ *Note : On Order Above Rs 300. 
+ 
+ 
+ -->
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ © 2019-2026 - RailRecipe TM . All Rights Reserved.

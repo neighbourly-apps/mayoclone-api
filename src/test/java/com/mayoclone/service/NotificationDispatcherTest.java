@@ -24,7 +24,7 @@ class NotificationDispatcherTest {
     private static OrderDto order() {
         return new OrderDto(1L, null, null, "EXT-1", "PNR", "12951", "Raj", null, null,
                 null, "NDLS", "New Delhi", "Alice", "9000000000",
-                null, null, null, "INR", null, null, null, OrderStatus.NEW,
+                null, null, null, "INR", null, null, null, null, null, null, null, OrderStatus.NEW,
                 null, null, null, null, null, false, null, List.of(), List.of(), null, null, null);
     }
 

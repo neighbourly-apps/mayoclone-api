@@ -159,6 +159,10 @@ public class IngestionCore {
         o.setAmount(p.amount());
         o.setCurrency(p.currency() != null ? p.currency() : "INR");
         o.setAmountToCollect(p.amountToCollect());
+        o.setSubtotalAmount(p.subtotalAmount());
+        o.setGstAmount(p.gstAmount());
+        o.setDeliveryFee(p.deliveryFee());
+        o.setDiscountAmount(p.discountAmount());
         // Ingested orders are ONLINE; a fresh order enters the lifecycle at NEW.
         o.setOrderType(OrderType.ONLINE);
         // Prefer the payment mode the parser extracted from the email; fall back to
@@ -193,9 +197,9 @@ public class IngestionCore {
         if (isBlank(o.getTrainNumber())) {
             reasons.add("train number missing");
         }
-        if (isBlank(o.getDeliveryStationCode()) && isBlank(o.getDeliveryStationName())) {
-            reasons.add("delivery station missing");
-        }
+        // NOTE: a missing delivery station is NOT a review trigger — several real
+        // formats (e.g. RailRestro) legitimately carry no station, so flagging on it
+        // produced false positives. Items/amount/train/order-id remain the signals.
         if (looksGenerated(o.getExternalOrderId(), aggregator.getCode())) {
             reasons.add("order id not found (generated)");
         }
