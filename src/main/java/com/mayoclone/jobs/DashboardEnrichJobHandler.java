@@ -100,6 +100,16 @@ public class DashboardEnrichJobHandler implements JobHandler {
         if (!isUnknownOrBlank(order.getPassengerName())) {
             return;
         }
+        // A synthesized order id (email lacked a real order number → "<AGGCODE>-<digits>") can't
+        // be looked up on the dashboard — skip cleanly instead of retrying to dead-letter. Match
+        // ONLY this order's own aggregator-code prefix (a real order id is the aggregator's own
+        // number, e.g. "2465529423", which never has that prefix).
+        String extId = order.getExternalOrderId();
+        String aggCode = order.getAggregator() != null ? order.getAggregator().getCode() : null;
+        if (extId == null
+                || (aggCode != null && extId.matches("^" + java.util.regex.Pattern.quote(aggCode) + "-\\d+$"))) {
+            return;
+        }
         Long vendorId = order.getVendorId();
         if (vendorId == null) {
             return;
