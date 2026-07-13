@@ -167,6 +167,13 @@ public class DashboardEnrichJobHandler implements JobHandler {
             if (isBlank(order.getDeliverySlot()) && notBlank(e.deliverySlot())) {
                 order.setDeliverySlot(e.deliverySlot().trim());
             }
+            if (isBlank(order.getTrainNumber()) && notBlank(e.trainNumber())) {
+                order.setTrainNumber(e.trainNumber().trim());
+            }
+            // IRCTC emails omit the train NAME — the dashboard supplies it.
+            if (isBlank(order.getTrainName()) && notBlank(e.trainName())) {
+                order.setTrainName(e.trainName().trim());
+            }
         }
 
         // Recompute the review verdict: drop any name-related reason now that the name is

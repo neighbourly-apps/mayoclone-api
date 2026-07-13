@@ -242,7 +242,9 @@ public class IrctcEcateringScraper implements DashboardScraper {
         String coach = text(result.path("coach"));
         String berth = text(result.path("berth")); // may be numeric in the JSON → stringify
         String pnr = text(result.path("pnr"));
-        return new OrderEnrichment(name, phone, coach, berth, pnr, null);
+        String trainNumber = text(result.path("trainNo"));
+        String trainName = text(result.path("trainName")); // emails omit the name; dashboard has it
+        return new OrderEnrichment(name, phone, coach, berth, pnr, null, trainNumber, trainName);
     }
 
     /** True when a 200 response body is really an auth/session rejection wrapper. */

@@ -12,6 +12,8 @@ package com.mayoclone.enrich;
  * @param berth          berth/seat, when present
  * @param pnr            PNR, when present
  * @param deliverySlot   scheduled delivery time text, when present
+ * @param trainNumber    train number, when present (emails have it, but back-fill if blank)
+ * @param trainName      train name — IRCTC emails OMIT this; the dashboard has it (e.g. "MAHAKAUSHAL EXP")
  */
 public record OrderEnrichment(
         String passengerName,
@@ -19,11 +21,13 @@ public record OrderEnrichment(
         String coach,
         String berth,
         String pnr,
-        String deliverySlot
+        String deliverySlot,
+        String trainNumber,
+        String trainName
 ) {
 
     /** Convenience for the common case: only a name was recovered. */
     public static OrderEnrichment ofName(String passengerName) {
-        return new OrderEnrichment(passengerName, null, null, null, null, null);
+        return new OrderEnrichment(passengerName, null, null, null, null, null, null, null);
     }
 }
