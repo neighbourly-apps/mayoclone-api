@@ -14,7 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -69,6 +69,7 @@ public class MailboxPollDispatcher {
                                  JobQueue jobQueue,
                                  GmailPushProperties pushProps,
                                  JdbcTemplate jdbc,
+                                 PlatformTransactionManager txManager,
                                  AppMetrics metrics,
                                  MeterRegistry registry,
                                  @Value("${mayoclone.poll.enabled:false}") boolean enabled,
@@ -78,9 +79,14 @@ public class MailboxPollDispatcher {
         this.jobQueue = jobQueue;
         this.pushProps = pushProps;
         this.jdbc = jdbc;
-        this.txTemplate = (jdbc != null && jdbc.getDataSource() != null)
-                ? new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource()))
-                : null;
+        // Use the application's JPA transaction manager (NOT a standalone
+        // DataSourceTransactionManager): dispatchDue() does JPA work, so the tick must
+        // run in a JPA transaction. The advisory-lock JdbcTemplate shares that
+        // transaction's connection (Boot's JpaTransactionManager exposes the DataSource),
+        // so pg_try_advisory_xact_lock is held on the same connection and auto-released
+        // on commit. A DataSourceTransactionManager here made JPA fail to open its
+        // EntityManager on every tick ("Could not open JPA EntityManager for transaction").
+        this.txTemplate = txManager != null ? new TransactionTemplate(txManager) : null;
         this.metrics = metrics;
         this.enabled = enabled;
         this.intervalMs = intervalMs;

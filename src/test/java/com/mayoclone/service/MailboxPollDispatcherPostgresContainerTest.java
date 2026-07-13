@@ -67,11 +67,12 @@ class MailboxPollDispatcherPostgresContainerTest {
     @Autowired private JobWorker worker;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private DataSource dataSource;
+    @Autowired private org.springframework.transaction.PlatformTransactionManager txManager;
 
     private MailboxPollDispatcher dispatcher() {
         GmailPushProperties props = new GmailPushProperties("", "", "", 21_600_000L, true);
         SimpleMeterRegistry reg = new SimpleMeterRegistry();
-        return new MailboxPollDispatcher(vendorRepo, queue, props, jdbc,
+        return new MailboxPollDispatcher(vendorRepo, queue, props, jdbc, txManager,
                 new AppMetrics(reg), reg, true, 60_000L, 200);
     }
 

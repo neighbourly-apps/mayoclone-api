@@ -60,7 +60,9 @@ class MailboxPollDispatcherH2Test {
         String topic = pushConfigured ? "projects/p/topics/gmail-push" : "";
         GmailPushProperties props = new GmailPushProperties(topic, "", "", 21_600_000L, true);
         SimpleMeterRegistry reg = new SimpleMeterRegistry();
-        return new MailboxPollDispatcher(vendorRepo, jobQueue, props, jdbc,
+        // H2 path skips the advisory-lock transaction (dispatchDue() runs directly),
+        // so a null transaction manager is fine here.
+        return new MailboxPollDispatcher(vendorRepo, jobQueue, props, jdbc, null,
                 new AppMetrics(reg), reg, true, INTERVAL_MS, 200);
     }
 
