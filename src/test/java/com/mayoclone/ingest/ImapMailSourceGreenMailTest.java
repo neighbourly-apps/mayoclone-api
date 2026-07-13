@@ -36,7 +36,7 @@ class ImapMailSourceGreenMailTest {
     private static final String USER = "box@test.local";
     private static final String PASS = "secret";
 
-    private final ImapMailSource source = new ImapMailSource(30, 200);
+    private final ImapMailSource source = new ImapMailSource(30, 200, 0);
     private int delivered = 0;
 
     @BeforeEach

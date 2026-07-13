@@ -32,7 +32,7 @@ class ImapMailSourcePoisonMessageTest {
 
     @Test
     void poisonMessageIsSkippedAndCursorStillAdvances() throws Exception {
-        ImapMailSource source = new ImapMailSource(30, 200);
+        ImapMailSource source = new ImapMailSource(30, 200, 0);
 
         MimeMessage good = mock(MimeMessage.class);
         MimeMessage poison = mock(MimeMessage.class);

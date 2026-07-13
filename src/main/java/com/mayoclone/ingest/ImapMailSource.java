@@ -55,12 +55,19 @@ public class ImapMailSource implements MailSource {
 
     private final int backfillCount;
     private final int maxPerFetch;
+    private final int backfillSinceHours;
 
     public ImapMailSource(
             @Value("${mayoclone.imap.backfill-count:30}") int backfillCount,
-            @Value("${mayoclone.imap.max-per-fetch:200}") int maxPerFetch) {
+            @Value("${mayoclone.imap.max-per-fetch:200}") int maxPerFetch,
+            @Value("${mayoclone.imap.backfill-since-hours:0}") int backfillSinceHours) {
         this.backfillCount = backfillCount;
         this.maxPerFetch = maxPerFetch;
+        // When > 0, the FIRST (fresh-start) sync ingests only messages sent within this
+        // many hours — so we don't fetch hundreds of old bodies. 0 = disabled (use the
+        // message-count backfill). The UID cursor still baselines past all recent mail,
+        // so subsequent polls pick up only genuinely new orders.
+        this.backfillSinceHours = backfillSinceHours;
     }
 
     @Override
@@ -155,6 +162,15 @@ public class ImapMailSource implements MailSource {
             inbox.fetch(candidates, fp);
         }
 
+        // On a fresh start, optionally ingest only messages within a recent time window
+        // (e.g. the last 2 hours) so we don't fetch hundreds of old bodies. Messages
+        // outside the window are still counted toward the UID cursor (so we baseline past
+        // them) but their bodies are never fetched. The window uses the message's sent
+        // Date header (already in the ENVELOPE — no extra round-trip).
+        java.time.Instant sinceCutoff = (freshStart && backfillSinceHours > 0)
+                ? java.time.Instant.now().minus(backfillSinceHours, java.time.temporal.ChronoUnit.HOURS)
+                : null;
+
         long base = lastUid == null ? 0L : lastUid;
         long maxUid = base;
         List<RawMessage> out = new ArrayList<>(candidates.length);
@@ -171,9 +187,12 @@ public class ImapMailSource implements MailSource {
             try {
                 String from = firstAddress(message);
                 String subject = Optional.ofNullable(message.getSubject()).orElse("");
-                String body = extractText(message);
-                String messageId = stableMessageId(message, subject);
-                out.add(new RawMessage(from, subject, body, messageId));
+                if (sinceCutoff == null || withinWindow(message, sinceCutoff)) {
+                    String body = extractText(message);
+                    String messageId = stableMessageId(message, subject);
+                    out.add(new RawMessage(from, subject, body, messageId));
+                }
+                // else: older than the window — skip ingesting; the UID cursor still advances below.
             } catch (MessagingException e) {
                 // Poison message: one bad envelope must NOT abort the whole fetch and
                 // wedge this vendor forever (the UID watermark only advances after the
@@ -197,6 +216,16 @@ public class ImapMailSource implements MailSource {
             vendor.setImapLastUid(currentMaxUid(uf, inbox));
         }
         return out;
+    }
+
+    /** True when the message's sent date is at/after the cutoff (null/unreadable date → included). */
+    private static boolean withinWindow(Message message, java.time.Instant cutoff) {
+        try {
+            java.util.Date sent = message.getSentDate();
+            return sent == null || !sent.toInstant().isBefore(cutoff);
+        } catch (MessagingException e) {
+            return true; // can't read the date — don't drop a possible order
+        }
     }
 
     /** The most recent {@code n} messages by UID, returned in ascending-UID order. */
