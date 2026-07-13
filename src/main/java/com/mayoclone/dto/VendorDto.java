@@ -30,10 +30,18 @@ public record VendorDto(
         Instant lastSyncedAt,
         String lastSyncError,
         Instant nextPollAt,
-        Instant createdAt
+        Instant createdAt,
+        // Dashboard order-enrichment credential status ("NEW"/"ACTIVE"/"NEEDS_REAUTH"/
+        // "DISABLED"), or null when no dashboard login is configured. NEVER a secret —
+        // just enough for the UI to show a badge.
+        String dashboardStatus
 ) {
 
     public static VendorDto from(Vendor v) {
+        return from(v, null);
+    }
+
+    public static VendorDto from(Vendor v, String dashboardStatus) {
         return new VendorDto(
                 v.getId(),
                 v.getRestaurantName(),
@@ -55,7 +63,8 @@ public record VendorDto(
                 v.getLastSyncedAt(),
                 v.getLastSyncError(),
                 v.getNextPollAt(),
-                v.getCreatedAt()
+                v.getCreatedAt(),
+                dashboardStatus
         );
     }
 }

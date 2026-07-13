@@ -9,6 +9,9 @@ import com.mayoclone.domain.OrderStatus;
 import com.mayoclone.domain.OrderType;
 import com.mayoclone.domain.PaymentMode;
 import com.mayoclone.dto.IngestResult;
+import com.mayoclone.enrich.EnrichmentProperties;
+import com.mayoclone.jobs.DashboardEnrichJobHandler;
+import com.mayoclone.jobs.JobQueue;
 import com.mayoclone.observability.AppMetrics;
 import com.mayoclone.parser.IrctcEmailParser;
 import com.mayoclone.parser.ParsedOrder;
@@ -73,19 +76,25 @@ public class IngestionCore {
     private final IngestFailureRepository failureRepo;
     private final AppMetrics metrics;
     private final OrderCommandService orderCommandService;
+    private final JobQueue jobQueue;
+    private final EnrichmentProperties enrichmentProperties;
 
     public IngestionCore(List<IrctcEmailParser> parsers,
                          IrctcOrderRepository orderRepo,
                          AggregatorService aggregatorService,
                          IngestFailureRepository failureRepo,
                          AppMetrics metrics,
-                         OrderCommandService orderCommandService) {
+                         OrderCommandService orderCommandService,
+                         JobQueue jobQueue,
+                         EnrichmentProperties enrichmentProperties) {
         this.parsers = parsers;
         this.orderRepo = orderRepo;
         this.aggregatorService = aggregatorService;
         this.failureRepo = failureRepo;
         this.metrics = metrics;
         this.orderCommandService = orderCommandService;
+        this.jobQueue = jobQueue;
+        this.enrichmentProperties = enrichmentProperties;
     }
 
     /**
@@ -146,7 +155,29 @@ public class IngestionCore {
         metrics.orderIngested(agg.get().getCode(), sourceType == null ? null : sourceType.name());
         // Record the initial NEW status event + push a realtime NEW_ORDER event.
         orderCommandService.recordCreated(saved);
+        // Dashboard order-enrichment (OFF by default). When enabled, and the order has a
+        // known vendor but no real passenger name (the email omitted it), enqueue a
+        // durable job to look the name up on the vendor dashboard. Coalesced per order id
+        // so a re-sync never piles up duplicates. When disabled this block is inert and
+        // behavior is byte-for-byte the current pipeline.
+        maybeEnqueueEnrichment(saved);
         return new IngestResult(1, 1);
+    }
+
+    /**
+     * Gated enrichment enqueue. No-op unless {@code mayoclone.enrich.enabled=true}, the
+     * order carries a vendor id, and the passenger name is missing/"Unknown".
+     */
+    private void maybeEnqueueEnrichment(IrctcOrder saved) {
+        if (!enrichmentProperties.isEnabled()
+                || saved.getVendorId() == null
+                || !DashboardEnrichJobHandler.isUnknownOrBlank(saved.getPassengerName())) {
+            return;
+        }
+        jobQueue.enqueue(DashboardEnrichJobHandler.JOB_TYPE,
+                saved.getAccountId(), saved.getVendorId(),
+                "{\"orderId\":" + saved.getId() + "}",
+                "enrich:" + saved.getId());
     }
 
     private void recordFailure(Long accountId, Long vendorId, MailSourceType sourceType,

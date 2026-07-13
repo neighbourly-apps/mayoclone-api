@@ -6,6 +6,7 @@ import com.mayoclone.dto.CreateVendorRequest;
 import com.mayoclone.dto.IngestResult;
 import com.mayoclone.dto.VendorDto;
 import com.mayoclone.ingest.gmail.GmailWatchService;
+import com.mayoclone.repository.VendorDashboardCredentialRepository;
 import com.mayoclone.repository.VendorRepository;
 import com.mayoclone.security.CurrentAccountService;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,23 +40,35 @@ public class VendorService {
     private final CurrentAccountService currentAccount;
     private final AuditService auditService;
     private final GmailWatchService gmailWatchService;
+    private final VendorDashboardCredentialRepository dashboardCredRepo;
     private final String inboundDomain;
 
     public VendorService(VendorRepository vendorRepo, ImapIngestionService ingestionService,
                          CurrentAccountService currentAccount, AuditService auditService,
                          GmailWatchService gmailWatchService,
+                         VendorDashboardCredentialRepository dashboardCredRepo,
                          @Value("${mayoclone.inbound.domain:inbound.mayoclone.local}") String inboundDomain) {
         this.vendorRepo = vendorRepo;
         this.ingestionService = ingestionService;
         this.currentAccount = currentAccount;
         this.auditService = auditService;
         this.gmailWatchService = gmailWatchService;
+        this.dashboardCredRepo = dashboardCredRepo;
         this.inboundDomain = inboundDomain;
     }
 
     public List<VendorDto> list() {
-        return vendorRepo.findByAccountId(currentAccount.accountId()).stream()
-                .map(VendorDto::from).toList();
+        Long accountId = currentAccount.accountId();
+        return vendorRepo.findByAccountId(accountId).stream()
+                .map(v -> VendorDto.from(v, dashboardStatus(v.getId(), accountId)))
+                .toList();
+    }
+
+    /** The vendor's dashboard-credential status name for the DTO badge, or null when none. */
+    private String dashboardStatus(Long vendorId, Long accountId) {
+        return dashboardCredRepo.findByVendorIdAndAccountId(vendorId, accountId)
+                .map(c -> c.getStatus() == null ? null : c.getStatus().name())
+                .orElse(null);
     }
 
     public VendorDto create(CreateVendorRequest req) {

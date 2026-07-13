@@ -52,8 +52,12 @@ class IngestionCoreTest {
         parser = mock(IrctcEmailParser.class);
         AppMetrics metrics = new AppMetrics(new SimpleMeterRegistry());
         OrderCommandService orderCommandService = mock(OrderCommandService.class);
+        com.mayoclone.jobs.JobQueue jobQueue = mock(com.mayoclone.jobs.JobQueue.class);
+        // Enrichment OFF → the enqueue block is inert (current behavior unchanged).
+        com.mayoclone.enrich.EnrichmentProperties enrichProps =
+                new com.mayoclone.enrich.EnrichmentProperties(false, "IRCTC_ECATERING", 1500, "", "", "");
         core = new IngestionCore(List.of(parser), orderRepo, aggregatorService, failureRepo, metrics,
-                orderCommandService);
+                orderCommandService, jobQueue, enrichProps);
     }
 
     private static RawMessage msg() {

@@ -172,6 +172,21 @@ public class OrderCommandService {
         events.newOrder(saved.getAccountId(), mapper.toDto(saved));
     }
 
+    /**
+     * Push a realtime ENRICHED event for an order that was just back-filled from the
+     * vendor dashboard (see the dashboard order-enrichment framework). Mirrors
+     * {@link #recordCreated} but does NOT append a status event — the lifecycle state
+     * is unchanged; only descriptive fields (e.g. the passenger name) were filled.
+     * The tenant is read off the saved order (no request-bound account in the job path).
+     */
+    @Transactional
+    public void pushEnriched(IrctcOrder saved) {
+        if (saved == null || saved.getId() == null) {
+            return;
+        }
+        events.enriched(saved.getAccountId(), mapper.toDto(saved));
+    }
+
     private BigDecimal sumItems(CreateDirectOrderRequest req) {
         return req.items().stream()
                 .map(i -> (i.price() != null ? i.price() : BigDecimal.ZERO)

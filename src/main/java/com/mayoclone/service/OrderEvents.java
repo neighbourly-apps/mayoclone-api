@@ -40,6 +40,11 @@ public class OrderEvents {
         publish(accountId, OrderEvent.ASSIGNED, order);
     }
 
+    /** An order was back-filled from the vendor dashboard (dashboard enrichment). */
+    public void enriched(Long accountId, OrderDto order) {
+        publish(accountId, OrderEvent.ENRICHED, order);
+    }
+
     private void publish(Long accountId, String type, OrderDto order) {
         if (accountId == null || order == null) {
             return;
