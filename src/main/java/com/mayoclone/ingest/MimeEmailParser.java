@@ -15,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -180,14 +181,39 @@ public class MimeEmailParser {
                 .replace("&gt;", ">")
                 .replace("&quot;", "\"")
                 .replace("&#39;", "'")
-                .replace("&rupee;", "₹")
-                .replace("&#8377;", "₹");
+                .replace("&rupee;", "₹");
+        // Decode ALL numeric HTML entities — decimal &#8377; AND hex &#x20b9; (both are ₹,
+        // real IRCTC/aggregator emails use the hex form). Without this, currency symbols
+        // survive as "&#x20b9;" and every amount/price regex misses, so amounts read as 0.
+        s = decodeNumericEntities(s);
         // Collapse trailing spaces per line and squeeze runs of blank lines.
         StringBuilder out = new StringBuilder(s.length());
         for (String line : s.split("\n")) {
             out.append(line.strip()).append('\n');
         }
         return MANY_BLANK_LINES.matcher(out.toString()).replaceAll("\n\n").strip();
+    }
+
+    private static final Pattern NUMERIC_ENTITY = Pattern.compile("&#(x)?([0-9a-fA-F]+);");
+
+    /** Decode {@code &#NNNN;} (decimal) and {@code &#xHHHH;} (hex) entities to their characters. */
+    static String decodeNumericEntities(String s) {
+        Matcher m = NUMERIC_ENTITY.matcher(s);
+        StringBuilder sb = new StringBuilder(s.length());
+        while (m.find()) {
+            String repl = m.group();
+            try {
+                int cp = Integer.parseInt(m.group(2), m.group(1) != null ? 16 : 10);
+                if (cp > 0 && cp <= 0x10FFFF) {
+                    repl = new String(Character.toChars(cp));
+                }
+            } catch (NumberFormatException ignored) {
+                // leave the original token in place
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(repl));
+        }
+        m.appendTail(sb);
+        return sb.toString();
     }
 
     private static String safe(String v) {
