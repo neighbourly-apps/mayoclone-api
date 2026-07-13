@@ -199,7 +199,7 @@ public class ImapMailSource implements MailSource {
                 String subject = Optional.ofNullable(message.getSubject()).orElse("");
                 if (sinceCutoff == null || withinWindow(message, sinceCutoff)) {
                     String body = extractText(message);
-                    String messageId = stableMessageId(message, subject);
+                    String messageId = stableMessageId(message, from, subject);
                     out.add(new RawMessage(from, subject, body, messageId));
                 }
                 // else: older than the window — skip ingesting; the UID cursor still advances below.
@@ -310,8 +310,16 @@ public class ImapMailSource implements MailSource {
         return (from != null && from.length > 0) ? from[0].toString() : "";
     }
 
-    /** Prefer the Message-ID header; fall back to a hash of subject + sent date. */
-    private String stableMessageId(Message message, String subject) throws MessagingException {
+    /**
+     * The dedup key for one email. Prefer the RFC822 {@code Message-ID} header
+     * (stable, server-assigned). When it is ABSENT, fall back to a STABLE hash of
+     * {@code from + subject + sent-date} so the SAME email always yields the SAME id
+     * across re-syncs. Never a random UUID: a random id would look like a new email
+     * every poll and re-ingest the same message forever, defeating dedup. Behaviour is
+     * unchanged whenever a real Message-ID exists. Package-private so a MimeMessage
+     * unit test can exercise the fallback directly.
+     */
+    String stableMessageId(Message message, String from, String subject) throws MessagingException {
         if (message instanceof MimeMessage mime) {
             String id = mime.getMessageID();
             if (id != null && !id.isBlank()) {
@@ -319,7 +327,8 @@ public class ImapMailSource implements MailSource {
             }
         }
         long sent = message.getSentDate() != null ? message.getSentDate().getTime() : 0L;
-        return "gen-" + Math.abs((subject + "|" + sent).hashCode());
+        String basis = (from == null ? "" : from) + "|" + (subject == null ? "" : subject) + "|" + sent;
+        return "gen-" + Math.abs(basis.hashCode());
     }
 
     private String extractText(Message message) {

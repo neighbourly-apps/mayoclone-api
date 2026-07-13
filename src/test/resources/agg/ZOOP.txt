@@ -1,0 +1,105 @@
+Order Confirmation
+
+Dear Zaika Foods,
+
+You have received a New COD Order having Order Number ZO36980746787092100 on 13-Jul-2026 00:00
+
+Order Details:
+
+ZOOP Txn. No.
+: ZO36980746787092100
+Type
+: COD
+
+Customer Name
+: Vineet Singh
+Phone
+: 7905796332
+
+Train
+: Mahakal Sup Exp/ 20416
+Coach/ Seat
+: B4/ 31
+
+Restaurants Name
+: (1533) Zaika Foods
+ETA
+: 13-Jul-2026 00:00
+
+At
+: Virangana Lakshmibai Jhansi Junction/ VGLJ
+Delivery Date
+: 13-Jul-2026 00:00
+
+Item Details:
+
+Item Name
+Price
+Quantity
+Amount
+
+Veg Biryani
+230
+1
+230
+
+Butter Scotch Shake
+190
+1
+190
+
+Base Price Total
+₹ 420
+
+(+) GST on food
+₹ 18.5
+
+(+) Delivery Charge
+₹ 25.42
+
+(+) GST on Delivery Charge
+₹ 4.58
+
+(+) Gateway Platform Fees
+₹ 40
+
+(-) Discount
+₹ 50
+
+Order Total
+₹ 459
+
+(-) Paid Online
+₹ 0
+
+BALANCE TO PAY
+₹ 459
+
+Item Description:
+
+Item Name
+Description
+
+Veg Biryani
+Soya Chunks Biryani (350g) + Chutney/Raita + Cutlery
+
+Butter Scotch Shake
+Butter Scotch Shake (250ml) Glass Sipper + Straw + Napkin
+
+Restaurant Details:
+
+Name
+Address
+GSTIN-->
+
+FSSAI
+FSSAI Validity
+
+Zaika Foods
+1461 I/F OF BRIJRANI GARDEN NEAR RISHABH HOTEL CHITRA CHOURAHA
+09ETMPK2352C1ZP-->
+
+22722621000355
+26-09-2027
+
+Zoop Web Services Private Limited

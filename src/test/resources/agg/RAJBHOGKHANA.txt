@@ -1,0 +1,73 @@
+Rajbhog Order Invoice
+
+Booking Date: 11 Jul 2026,  16:21
+
+Delivery Date: 11 Jul 2026,  19:15
+
+FSSAI NO.: 22722621000355
+
+To
+
+Customer Name : Sandeep Gautam
+
+Customer Contact : 8765962487
+
+Customer Email :
+
+Invoice RBK001734622 / 2464656924
+
+Payment: CASH_ON_DELIVERY
+
+Coach / Berth: S1 / 48
+
+Train: 22538 / KUSHINAGAR EXP
+
+Delivery Station: VGLJ / VIRANGANA LAKSHMIBAI JHANSI JN
+
+SL#
+Item
+Description
+Qty
+Price
+GST
+Amount
+
+1
+VEG THALI
+paneer gravy , rice , 3 roti , achar , salad , sweet , mouth freshener , spoon , napkin
+1
+159.00
+7.55
+159.00
+
+Subtotal:
+159.00
+
+GST (5%)
+7.55
+
+Discount
+7.95
+
+Delivery:
+0
+
+Total:
+159.00
+
+1. Please take the OTP from customer on delivery and update the delivery status on RajBhog Vendor Dashboard/App.
+
+2. Please Note if PAYMENT MODE is COD (Cash On Delivery). It is vendors responsibility to collect cash at the time of delivery.
+
+Information
+
+All disputes are subject to the jurisdiction of the Ambala Courts.
+
+This is Computer generated mail. Please do no reply.
+
+Warm Regards
+
+RajBhog Khana
+
+Ambala (Haryana)
+Pnone Np. 0171-4081962 / 98962-77713

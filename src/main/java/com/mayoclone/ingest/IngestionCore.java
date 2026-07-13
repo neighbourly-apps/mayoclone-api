@@ -140,10 +140,21 @@ public class IngestionCore {
         o.setAggregator(aggregator);
         o.setAccountId(accountId);
         o.setVendorId(vendorId);
-        o.setExternalOrderId(p.externalOrderId());
+        // Global order-id guard: a blank or non-order-looking token (a bare word like
+        // "for"/"Booking", or something too short to be a real id) is replaced by a
+        // STABLE generated id <AGGCODE>-<hash-of-sourceMessageId>. That synthesized
+        // shape is later caught by applyReviewVerdict → flagged "order id not found
+        // (generated)". A real numeric/alphanumeric id passes through unchanged.
+        o.setExternalOrderId(isRealOrderId(p.externalOrderId())
+                ? p.externalOrderId().trim()
+                : generatedOrderId(aggregator.getCode(), p.sourceMessageId()));
         o.setPnr(p.pnr());
-        o.setTrainNumber(p.trainNumber());
-        o.setTrainName(p.trainName());
+        // Global train-number guard: keep ONLY digits and store it ONLY when the result
+        // is a plausible train number (4–5 digits) — NEVER text. A captured train NAME
+        // (e.g. "EXP 123") is dropped from the number and preserved in trainName instead.
+        String cleanedTrainNumber = plausibleTrainNumber(p.trainNumber());
+        o.setTrainNumber(cleanedTrainNumber);
+        o.setTrainName(resolveTrainName(p.trainName(), p.trainNumber(), cleanedTrainNumber));
         o.setCoach(p.coach());
         o.setBerth(p.berth());
         o.setBoardingStationCode(p.boardingStationCode());
@@ -223,6 +234,59 @@ public class IngestionCore {
 
     private static boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    /**
+     * A real order id must be non-blank, at least 3 chars, and contain a digit. This
+     * rejects a bare alphabetic dictionary word ("for", "Booking") and anything too
+     * short to be a genuine id, while letting a numeric/alphanumeric id ("EXT-9",
+     * "ZOOP-123456", "20250706") pass through untouched.
+     */
+    private static boolean isRealOrderId(String id) {
+        if (id == null) {
+            return false;
+        }
+        String t = id.trim();
+        return t.length() >= 3 && t.chars().anyMatch(Character::isDigit);
+    }
+
+    /**
+     * The stable fallback order id — mirrors the generic parser's own fallback shape
+     * ({@code <AGGCODE>-<abs hash of the source message id>}) so it is deterministic
+     * across re-syncs AND recognised by {@link #looksGenerated} for the review flag.
+     */
+    private static String generatedOrderId(String aggregatorCode, String sourceMessageId) {
+        String code = (aggregatorCode == null || aggregatorCode.isBlank()) ? "GEN" : aggregatorCode;
+        return code + "-" + Math.abs(String.valueOf(sourceMessageId).hashCode());
+    }
+
+    /**
+     * Digits-only train number, kept ONLY when it is a plausible train number (4–5
+     * digits). Anything else (a name, a partial, junk) becomes null — we NEVER store
+     * text in the train-number field.
+     */
+    private static String plausibleTrainNumber(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String digits = raw.replaceAll("\\D", "");
+        return (digits.length() == 4 || digits.length() == 5) ? digits : null;
+    }
+
+    /**
+     * Keep an explicitly parsed train name. Otherwise, if the raw train-NUMBER field
+     * actually held a name (it had letters and did not survive as a plausible number),
+     * preserve that text as the train name rather than discarding it.
+     */
+    private static String resolveTrainName(String parsedTrainName, String rawTrainNumber, String cleanedTrainNumber) {
+        if (!isBlank(parsedTrainName)) {
+            return parsedTrainName;
+        }
+        if (cleanedTrainNumber == null && rawTrainNumber != null
+                && rawTrainNumber.chars().anyMatch(Character::isLetter)) {
+            return rawTrainNumber.trim();
+        }
+        return parsedTrainName;
     }
 
     /**
