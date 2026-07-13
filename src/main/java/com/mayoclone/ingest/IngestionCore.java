@@ -44,6 +44,29 @@ public class IngestionCore {
             "cash\\s*on\\s*delivery|pay\\s*on\\s*delivery|pay\\s*at\\s*delivery|cash\\s*payment|\\bCOD\\b",
             Pattern.CASE_INSENSITIVE);
 
+    // Post-order NOTICES (not orders): IRCTC "Delivery Time Passed", provisional-invoice
+    // and feedback mails carry no item table and must never become empty orders.
+    private static final Pattern NON_ORDER_NOTICE = Pattern.compile(
+            "delivery\\s*time\\s*(has\\s*)?passed|provisional\\s*invoice"
+                    + "|feedback\\s*for\\s*(this|your)\\s*order|thank\\s*you\\s*for\\s*ordering",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * True for a post-order notification (no item table AND no positive amount AND a notice
+     * phrase in the subject/body). Requiring "no order content" guarantees a real order —
+     * which always has items or an amount — is never skipped.
+     */
+    private static boolean isNonOrderNotification(RawMessage msg, ParsedOrder p) {
+        boolean noOrderContent = (p.items() == null || p.items().isEmpty())
+                && (p.amount() == null || p.amount().signum() <= 0);
+        if (!noOrderContent) {
+            return false;
+        }
+        String hay = (msg.subject() == null ? "" : msg.subject()) + "\n"
+                + (msg.body() == null ? "" : msg.body());
+        return NON_ORDER_NOTICE.matcher(hay).find();
+    }
+
     private final List<IrctcEmailParser> parsers;
     private final IrctcOrderRepository orderRepo;
     private final AggregatorService aggregatorService;
@@ -94,6 +117,15 @@ public class IngestionCore {
             log.warn("Parser {} threw for aggregator {}: {}",
                     parser.get().getClass().getSimpleName(), agg.get().getCode(), e.getMessage());
             recordFailure(accountId, vendorId, sourceType, msg, IngestFailureReason.PARSE_FAILED);
+            return new IngestResult(1, 0);
+        }
+
+        // Not an order: aggregators also send post-order NOTICES (e.g. IRCTC "Delivery
+        // Time Passed", provisional-invoice / feedback mails) that carry no item table.
+        // These must NOT become empty orders — skip them silently (fetched, 0 new).
+        if (isNonOrderNotification(msg, parsed)) {
+            log.debug("Skipping non-order notification from {} (subject '{}')",
+                    msg.from(), msg.subject());
             return new IngestResult(1, 0);
         }
 
