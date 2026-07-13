@@ -145,7 +145,17 @@ public class ImapMailSource implements MailSource {
 
         Message[] candidates;
         boolean freshStart = knownValidity == null || !knownValidity.equals(validity) || lastUid == null;
-        if (freshStart) {
+        if (freshStart && backfillSinceHours > 0) {
+            // Time-windowed first sync: ask the SERVER for just the recent messages
+            // (IMAP SINCE, day-granular; the exact hour window is applied per-message in
+            // the loop). This avoids inbox.getMessages()+per-message getUID over the WHOLE
+            // mailbox, which round-trips per message and stalls on a large Gmail inbox.
+            java.util.Date since = java.util.Date.from(java.time.LocalDate.now()
+                    .minusDays(backfillSinceHours >= 24 ? (backfillSinceHours / 24) + 1 : 1)
+                    .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
+            candidates = inbox.search(
+                    new jakarta.mail.search.ReceivedDateTerm(jakarta.mail.search.ComparisonTerm.GE, since));
+        } else if (freshStart) {
             // New mailbox, or the server reset UIDVALIDITY: re-baseline with a bounded
             // backfill of the most recent messages (never pull the whole history).
             candidates = mostRecentByUid(uf, inbox.getMessages(), backfillCount);
