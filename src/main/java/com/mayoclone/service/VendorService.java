@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 /**
@@ -58,6 +59,13 @@ public class VendorService {
     }
 
     public VendorDto create(CreateVendorRequest req) {
+        // One mailbox per account: a restaurant connects a single inbox where all
+        // aggregator orders land. Block a second mailbox — the existing one must be
+        // removed first (via DELETE /api/vendors/{id}).
+        if (vendorRepo.countByAccountId(currentAccount.accountId()) > 0) {
+            throw new ResponseStatusException(CONFLICT,
+                    "A mailbox is already connected to this account. Remove it before adding another.");
+        }
         MailSourceType sourceType = req.sourceType() == null ? MailSourceType.IMAP : req.sourceType();
 
         Vendor v = new Vendor();

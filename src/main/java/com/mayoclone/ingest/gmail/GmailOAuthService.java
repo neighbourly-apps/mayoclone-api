@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpStatus.BAD_GATEWAY;
 import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE;
 
 /**
@@ -123,6 +124,12 @@ public class GmailOAuthService {
                 .findByAccountIdAndSourceTypeAndOauthEmail(accountId, MailSourceType.GMAIL_OAUTH, email)
                 .orElseGet(Vendor::new);
         if (vendor.getId() == null) {
+            // One mailbox per account: reconnecting the SAME Gmail updates the existing
+            // vendor above; connecting a NEW mailbox when one already exists is blocked.
+            if (vendorRepo.countByAccountId(accountId) > 0) {
+                throw new ResponseStatusException(CONFLICT,
+                        "A mailbox is already connected to this account. Remove it before adding another.");
+            }
             vendor.setAccountId(accountId);
             vendor.setRestaurantName(email != null ? "Gmail: " + email : "Gmail mailbox");
             vendor.setOwnerEmail(email);
