@@ -325,7 +325,11 @@ public class ImapMailSource implements MailSource {
     private String extractText(Message message) {
         try {
             Object content = message.getContent();
-            return extractFromContent(content, message.getContentType());
+            // ALWAYS decode HTML entities on the final body — aggregator emails carry the
+            // ₹ sign (and others) as literal entities (&#x20b9; / &#8377; / &amp; …) even in
+            // their text/plain parts. Without decoding, every amount/price regex grabs stray
+            // digits out of the entity (the "20" in "&#x20b9;", "8377" in "&#8377;").
+            return MimeEmailParser.decodeEntities(extractFromContent(content, message.getContentType()));
         } catch (IOException | MessagingException e) {
             log.debug("Failed to read message body: {}", e.getMessage());
             return "";
@@ -335,7 +339,9 @@ public class ImapMailSource implements MailSource {
     private String extractFromContent(Object content, String contentType)
             throws IOException, MessagingException {
         if (content instanceof String text) {
-            return isHtml(contentType) ? stripHtml(text) : text;
+            // Use the shared, newline-aware HTML→text (block tags → newlines + entity decode)
+            // so HTML-only emails keep the one-field-per-line layout the parsers expect.
+            return isHtml(contentType) ? MimeEmailParser.stripHtml(text) : text;
         }
         if (content instanceof Multipart multipart) {
             String html = null;
@@ -346,7 +352,7 @@ public class ImapMailSource implements MailSource {
                     return String.valueOf(partContent);
                 }
                 if (part.isMimeType("text/html")) {
-                    html = stripHtml(String.valueOf(partContent));
+                    html = MimeEmailParser.stripHtml(String.valueOf(partContent));
                 } else if (partContent instanceof Multipart) {
                     String nested = extractFromContent(partContent, part.getContentType());
                     if (!nested.isBlank()) {
@@ -361,13 +367,6 @@ public class ImapMailSource implements MailSource {
 
     private boolean isHtml(String contentType) {
         return contentType != null && contentType.toLowerCase().contains("text/html");
-    }
-
-    private String stripHtml(String html) {
-        return html.replaceAll("(?s)<[^>]*>", " ")
-                .replaceAll("&nbsp;", " ")
-                .replaceAll("[ \\t]+", " ")
-                .trim();
     }
 
     private void closeQuietly(Folder folder) {
