@@ -74,7 +74,7 @@ class DashboardEnrichJobHandlerTest {
         };
         DashboardScraperRegistry registry = new DashboardScraperRegistry(List.of(scraper));
         return new DashboardEnrichJobHandler(props, orderRepo, vendorRepo, credRepo, registry,
-                orderCommandService);
+                orderCommandService, mock(com.mayoclone.service.TrainNameService.class));
     }
 
     private static IngestJob job() {

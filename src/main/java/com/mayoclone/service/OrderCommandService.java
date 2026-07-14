@@ -136,8 +136,8 @@ public class OrderCommandService {
         }
 
         o.setStatus(to);
-        // BILL_PENDING is the "delivered, bill pending" point — stamp deliveredAt here.
-        if (to == OrderStatus.BILL_PENDING) {
+        // COMPLETED and BILL_PENDING both mean the food reached the passenger — stamp deliveredAt.
+        if (to.isDelivered() && o.getDeliveredAt() == null) {
             o.setDeliveredAt(Instant.now());
         }
         // Capture the cancellation reason on the order (and prefer it as the event

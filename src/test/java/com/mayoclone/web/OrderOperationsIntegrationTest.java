@@ -126,8 +126,9 @@ class OrderOperationsIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.status").value("ACCEPTED"))
                 .andExpect(jsonPath("$.statusHistory.length()").value(2));
         patchStatus(token, id, "OUT_FOR_DELIVERY").andExpect(status().isOk());
-        patchStatus(token, id, "BILL_PENDING").andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("BILL_PENDING"))
+        // Happy path now terminates in COMPLETED (deliveredAt stamped there).
+        patchStatus(token, id, "COMPLETED").andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.deliveredAt").exists())
                 .andExpect(jsonPath("$.statusHistory.length()").value(4));
     }
@@ -141,12 +142,12 @@ class OrderOperationsIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void transitionGraphEnforcesTheFiveStateModel() throws Exception {
+    void transitionGraphEnforcesTheLifecycleModel() throws Exception {
         String token = registerAndToken(uniqueEmail(), PW);
 
-        // NEW -> BILL_PENDING (skipping) is illegal.
+        // NEW -> COMPLETED (skipping the chain) is illegal — COMPLETED only follows OUT_FOR_DELIVERY.
         Long a = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
-        patchStatus(token, a, "BILL_PENDING").andExpect(status().isConflict());
+        patchStatus(token, a, "COMPLETED").andExpect(status().isConflict());
 
         // Any non-terminal may be cancelled: ACCEPTED -> CANCELLED is legal, then terminal.
         Long b = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
@@ -156,12 +157,20 @@ class OrderOperationsIntegrationTest extends AbstractIntegrationTest {
         // CANCELLED is terminal — no further transitions.
         patchStatus(token, b, "ACCEPTED").andExpect(status().isConflict());
 
-        // Full happy path to BILL_PENDING, which is terminal (cannot be cancelled after).
+        // Full happy path to COMPLETED, which is terminal (cannot be cancelled after).
         Long c = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
         patchStatus(token, c, "ACCEPTED").andExpect(status().isOk());
         patchStatus(token, c, "OUT_FOR_DELIVERY").andExpect(status().isOk());
-        patchStatus(token, c, "BILL_PENDING").andExpect(status().isOk());
+        patchStatus(token, c, "COMPLETED").andExpect(status().isOk());
         patchStatus(token, c, "CANCELLED").andExpect(status().isConflict());
+
+        // BILL_PENDING is an EXCEPTION terminal reachable from any non-terminal (like CANCELLED):
+        // NEW -> BILL_PENDING is legal, and it is terminal thereafter.
+        Long d = createDirect(token, "PREPAID", "300", LocalDate.now().toString());
+        patchStatus(token, d, "BILL_PENDING").andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("BILL_PENDING"))
+                .andExpect(jsonPath("$.deliveredAt").exists());
+        patchStatus(token, d, "COMPLETED").andExpect(status().isConflict());
     }
 
     @Test

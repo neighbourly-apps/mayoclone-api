@@ -33,6 +33,9 @@ dependencies {
     // Rate limiting.
     implementation("com.bucket4j:bucket4j-core:8.10.1")
 
+    // Apache POI — read/write .xlsx for the menu bulk-import + sample template.
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
+
     // Observability: Prometheus metrics registry (Micrometer; version from the Boot BOM).
     implementation("io.micrometer:micrometer-registry-prometheus")
 
