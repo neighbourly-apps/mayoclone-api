@@ -253,12 +253,14 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
 
     // ---- extra charges ------------------------------------------------------
 
-    // An explicit additive fee line, e.g. "(+) Gateway Platform Fees   ₹ 30". The label is
-    // captured up to the amount; only the "(+)" additive form is matched so item/summary
-    // numbers can't be mistaken for a fee.
+    // An explicit additive fee line, e.g. "(+) Gateway Platform Fees   ₹ 30". Handles BOTH the
+    // horizontal form (label and amount on one line) AND the vertical flatten where the amount
+    // sits on the NEXT line ("(+) Gateway Platform Fees" ⏎ "₹ 30") — \\s spans the newline.
+    // The currency symbol is REQUIRED so the match locks onto the real amount line, and only the
+    // "(+)" additive form is matched so item/summary numbers can't be mistaken for a fee.
     private static final Pattern PLUS_FEE = Pattern.compile(
-            "\\(\\+\\)" + H + "*([A-Za-z][A-Za-z .&/()-]*?)" + H + "*[:#-]?" + H
-                    + "*(?:₹|Rs\\.?|INR)?" + H + "*([0-9][0-9,]*(?:\\.[0-9]+)?)",
+            "\\(\\+\\)\\s*([A-Za-z][A-Za-z .&/()-]*?)\\s*[:#-]?\\s*"
+                    + "(?:₹|Rs\\.?|INR)\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)",
             Pattern.CASE_INSENSITIVE);
 
     // Labels already carried by their own field (subtotal/GST/delivery/discount, totals) —
