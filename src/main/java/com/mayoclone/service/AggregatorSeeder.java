@@ -42,7 +42,8 @@ public class AggregatorSeeder implements CommandLineRunner {
                         List.of("ecatering.irctc.co.in", "irctc.co.in"), "#213A8F", "https://www.ecatering.irctc.co.in"),
                 seed("RELFOOD", "REL Food", List.of("relfood.com"), "#E8552D", "https://www.relfood.com"),
                 seed("RAILRECIPE", "RailRecipe", List.of("railrecipe.com"), "#1BA94C", "https://www.railrecipe.com"),
-                seed("RAJBHOGKHANA", "Rajbhog Khana", List.of("rajbhogkhana.com"), "#D4380D", "https://www.rajbhogkhana.com")
+                seed("RAJBHOGKHANA", "Rajbhog Khana", List.of("rajbhogkhana.com"), "#D4380D", "https://www.rajbhogkhana.com"),
+                seed("YATRI_RESTRO", "Yatri Restro", List.of("yatrirestro.com"), "#0D9488", "https://www.yatrirestro.com")
         );
         List<Aggregator> toInsert = seeds.stream()
                 .filter(s -> !repo.existsByCodeIgnoreCase(s.getCode()))

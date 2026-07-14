@@ -9,5 +9,7 @@ public enum IngestFailureReason {
     /** A parser matched but threw while extracting fields. */
     PARSE_FAILED,
     /** Inbound webhook recipient did not map to any vendor's ingest address. */
-    UNMATCHED_RECIPIENT
+    UNMATCHED_RECIPIENT,
+    /** Parsed to nothing actionable (no id/items/amount/train) — likely a promo/notice. */
+    NO_ORDER_SIGNAL
 }

@@ -20,6 +20,8 @@ class RealAggregatorEmailParsingTest {
 
     private final GenericIrctcEmailParser generic = new GenericIrctcEmailParser();
     private final ZoopEmailParser zoop = new ZoopEmailParser();
+    // RELFOOD is genuinely US M/d dates + its own layouts — test the real production parser.
+    private final RelfoodEmailParser relfood = new RelfoodEmailParser();
 
     private static Aggregator agg(String code) {
         Aggregator a = new Aggregator();
@@ -156,7 +158,7 @@ class RealAggregatorEmailParsingTest {
 
     @Test
     void parsesRelfood() {
-        ParsedOrder p = generic.parse(agg("RELFOOD"), "orders@relfood.com",
+        ParsedOrder p = relfood.parse(agg("RELFOOD"), "orders@relfood.com",
                 "REL FOOD Order Invoice No.: 1090864", RELFOOD, "<rel-1@relfood.com>");
 
         assertEquals("2465035817", p.externalOrderId());
@@ -329,6 +331,53 @@ class RealAggregatorEmailParsingTest {
         assertMoney("159.00", p.amount());
     }
 
+    // 7) Yatri Restro — two label/value pairs per line, HAS the customer name, 5-column
+    //    item table (Item | Description | Price | Quantity | Amount), COD. Routes through the
+    //    generic parser (no dedicated Yatri parser needed).
+    private static final String YATRI = """
+            Order Confirmation
+            Dear Partner,
+            Please prepare order and deliver order on time.
+            Order details:
+            ORDER No    1000525873    MOBILE NO    7869228585
+            CUSTOMER NAME    Yankeshwar Dhiwar    TRAIN No /NAME    12808 / SAMTA EXPRESS
+            DELIVERY DATE    14-07-2026, 13:15    COACH/BERTH    B4 / 57
+            PAYMENT STATUS    CASH_ON_DELIVERY    Station Code/Name    VGLJ / VIRANGANA LAKSHMIBAI JHANSI JN
+            Order Item Details:
+            Item    Description    Price    Quantity    Amount
+            Veg Thali    Paneer Gravy Rice 3 Roti Achar Salad Sweet MF spoon Napkin    ₹ 165    2    ₹ 330
+            Sub Total    ₹ 330
+            GST    ₹ 16.50
+            DISCOUNT    ₹ 0
+            Grand Total (Inclusive of all taxes)    ₹ 347
+            """;
+
+    @Test
+    void parsesYatriRestro() {
+        ParsedOrder p = generic.parse(agg("YATRI_RESTRO"), "support@yatrirestro.com",
+                "Order From Yatri Restro", YATRI, "<yatri-1@yatrirestro.com>");
+
+        assertEquals("1000525873", p.externalOrderId());
+        assertEquals("Yankeshwar Dhiwar", p.passengerName());
+        assertEquals("7869228585", p.passengerPhone());
+        assertEquals("12808", p.trainNumber());
+        assertEquals("SAMTA EXPRESS", p.trainName());
+        assertEquals("B4", p.coach());
+        assertEquals("57", p.berth());
+        assertEquals("VGLJ", p.deliveryStationCode());
+        assertEquals("VIRANGANA LAKSHMIBAI JHANSI JN", p.deliveryStationName());
+        assertEquals(LocalDate.of(2026, 7, 14), p.deliveryDate());
+        assertEquals("13:15", p.deliverySlot());
+        assertEquals("COD", p.paymentMode());
+        OrderItem item = p.items().get(0);
+        assertEquals("Veg Thali", item.getName());
+        assertEquals(2, item.getQty());
+        assertMoney("165", item.getPrice());
+        assertMoney("330", p.subtotalAmount());
+        assertMoney("16.50", p.gstAmount());
+        assertMoney("347", p.amount());
+    }
+
     // ========================================================================
     // VALUE-VARIED twins: same six formats, DIFFERENT values throughout, to
     // prove the parser extracts whatever is present rather than memorizing the
@@ -449,7 +498,7 @@ class RealAggregatorEmailParsingTest {
 
     @Test
     void parsesRelfoodVaried() {
-        ParsedOrder p = generic.parse(agg("RELFOOD"), "orders@relfood.com",
+        ParsedOrder p = relfood.parse(agg("RELFOOD"), "orders@relfood.com",
                 "REL FOOD Order Invoice No.: 2211334", RELFOOD_V, "<rel-2@relfood.com>");
 
         assertEquals("3312456789", p.externalOrderId());

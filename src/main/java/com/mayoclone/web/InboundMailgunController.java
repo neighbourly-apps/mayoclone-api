@@ -134,15 +134,20 @@ public class InboundMailgunController {
         return ResponseEntity.ok(Map.of("status", "accepted", "newOrders", result.newOrders()));
     }
 
-    /** body-plain → stripped-text → html-stripped body-html. */
+    /**
+     * body-plain → stripped-text → html-stripped body-html. The plain/stripped MIME parts
+     * carry ₹ as literal HTML entities (&#x20b9; / &#8377;), so they MUST be decoded too —
+     * otherwise an amount regex reads "20"/"8377" out of the entity. (stripHtml already
+     * decodes internally, so the html branch needs no extra call.)
+     */
     private static String resolveBody(Map<String, String> form) {
         String plain = firstNonBlank(form, "body-plain", "bodyPlain");
         if (plain != null) {
-            return plain;
+            return MimeEmailParser.decodeEntities(plain);
         }
         String stripped = firstNonBlank(form, "stripped-text", "strippedText");
         if (stripped != null) {
-            return stripped;
+            return MimeEmailParser.decodeEntities(stripped);
         }
         String html = firstNonBlank(form, "body-html", "bodyHtml");
         return html != null ? MimeEmailParser.stripHtml(html) : null;

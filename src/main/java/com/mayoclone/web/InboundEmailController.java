@@ -5,6 +5,7 @@ import com.mayoclone.domain.MailSourceType;
 import com.mayoclone.domain.Vendor;
 import com.mayoclone.dto.IngestResult;
 import com.mayoclone.ingest.IngestionCore;
+import com.mayoclone.ingest.MimeEmailParser;
 import com.mayoclone.ingest.RawMessage;
 import com.mayoclone.ingest.inbound.InboundSignatureVerifier;
 import com.mayoclone.observability.AppMetrics;
@@ -95,7 +96,13 @@ public class InboundEmailController {
         String recipient = firstNonBlank(payload, "recipient", "to");
         String from = firstNonBlank(payload, "from", "sender");
         String subject = firstNonBlank(payload, "subject", "Subject");
-        String body = firstNonBlank(payload, "bodyPlain", "body-plain", "bodyHtml", "body-html", "text");
+        // Prefer plain text (decode ₹/HTML entities); else strip+decode the HTML part.
+        // Never pass a raw body: undecoded entities corrupt amounts (₹180→₹20) and raw
+        // HTML tags wreck every field regex.
+        String plain = firstNonBlank(payload, "bodyPlain", "body-plain", "text");
+        String html = firstNonBlank(payload, "bodyHtml", "body-html");
+        String body = plain != null ? MimeEmailParser.decodeEntities(plain)
+                : (html != null ? MimeEmailParser.stripHtml(html) : null);
         String messageId = firstNonBlank(payload, "messageId", "Message-Id", "message-id");
 
         Vendor vendor = recipient == null ? null

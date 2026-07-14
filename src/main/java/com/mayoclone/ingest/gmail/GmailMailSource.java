@@ -3,6 +3,7 @@ package com.mayoclone.ingest.gmail;
 import com.mayoclone.domain.MailSourceType;
 import com.mayoclone.domain.Vendor;
 import com.mayoclone.ingest.MailSource;
+import com.mayoclone.ingest.MimeEmailParser;
 import com.mayoclone.ingest.RawMessage;
 import jakarta.mail.Message;
 import jakarta.mail.Multipart;
@@ -122,11 +123,18 @@ public class GmailMailSource implements MailSource {
         }
     }
 
+    /**
+     * Extract the plain body, ALWAYS routing through the shared {@link MimeEmailParser}
+     * so ₹ / other HTML entities are decoded (&#x20b9; / &#8377; / &amp; …) and the block
+     * layout is preserved — identical to the IMAP path. Reimplementing this locally is what
+     * caused ₹180 to be read as ₹20/₹8377 and destroyed the vertical layout.
+     */
     private String extractText(Message message) {
         try {
             Object content = message.getContent();
             if (content instanceof String s) {
-                return message.isMimeType("text/html") ? stripHtml(s) : s;
+                return MimeEmailParser.decodeEntities(
+                        message.isMimeType("text/html") ? MimeEmailParser.stripHtml(s) : s);
             }
             if (content instanceof Multipart mp) {
                 String html = null;
@@ -134,24 +142,17 @@ public class GmailMailSource implements MailSource {
                     var part = mp.getBodyPart(i);
                     Object pc = part.getContent();
                     if (part.isMimeType("text/plain")) {
-                        return String.valueOf(pc);
+                        return MimeEmailParser.decodeEntities(String.valueOf(pc));
                     }
                     if (part.isMimeType("text/html")) {
-                        html = stripHtml(String.valueOf(pc));
+                        html = MimeEmailParser.stripHtml(String.valueOf(pc));
                     }
                 }
-                return html != null ? html : "";
+                return html != null ? MimeEmailParser.decodeEntities(html) : "";
             }
-            return String.valueOf(content);
+            return MimeEmailParser.decodeEntities(String.valueOf(content));
         } catch (Exception e) {
             return "";
         }
-    }
-
-    private String stripHtml(String html) {
-        return html.replaceAll("(?s)<[^>]*>", " ")
-                .replaceAll("&nbsp;", " ")
-                .replaceAll("[ \\t]+", " ")
-                .trim();
     }
 }

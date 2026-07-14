@@ -40,15 +40,17 @@ public class TrainNameService {
     }
 
     /**
-     * Remember a train's name (last-write-wins, so a stale/typo'd name self-heals).
-     * No-op unless BOTH number and name are present. Runs in its OWN transaction and
-     * swallows any failure (e.g. a concurrent-insert race) so learning a name can
-     * never fail — or roll back — the order ingestion that triggered it.
+     * Remember a train's name. No-op unless the number is present and the name looks like a
+     * real train name — this guard is critical because the catalog is GLOBAL (shared across
+     * all tenants): without it, one vendor's garbled capture ("No", "EXP", a marketing token)
+     * would overwrite the correct/seeded name for that train number for EVERYONE. A plausible
+     * name still updates (last-write-wins) so the operator's own vocabulary refines the seed.
+     * Runs in its OWN transaction and swallows any failure so learning can never roll back the
+     * order ingestion that triggered it.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(String trainNumber, String trainName) {
-        if (trainNumber == null || trainNumber.isBlank()
-                || trainName == null || trainName.isBlank()) {
+        if (trainNumber == null || trainNumber.isBlank() || !looksLikeTrainName(trainName)) {
             return;
         }
         String num = trainNumber.trim();
@@ -66,5 +68,23 @@ public class TrainNameService {
             // Best-effort: a rare race (two orders for the same new train at once) is fine.
             log.debug("train-name catalog upsert skipped for {}: {}", num, e.toString());
         }
+    }
+
+    /**
+     * A plausible train name: ≥4 chars, ≥3 letters, and not a lone label/suffix token that a
+     * regex sometimes mis-captures ("No", "Name", "Train", "Exp", "SF", "Express", "Special").
+     */
+    static boolean looksLikeTrainName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String t = name.trim();
+        if (t.length() < 4) {
+            return false;
+        }
+        if (t.chars().filter(Character::isLetter).count() < 3) {
+            return false;
+        }
+        return !t.matches("(?i)no|name|train|exp|sf|express|special|sup|superfast");
     }
 }

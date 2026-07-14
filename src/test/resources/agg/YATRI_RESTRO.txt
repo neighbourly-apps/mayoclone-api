@@ -1,0 +1,18 @@
+Order Confirmation
+Dear Partner,
+Please prepare order and deliver order on time.
+
+Order details:
+ORDER No	1000525873	MOBILE NO	7869228585
+CUSTOMER NAME	Yankeshwar Dhiwar	TRAIN No /NAME	12808 / SAMTA EXPRESS
+DELIVERY DATE	14-07-2026, 13:15	COACH/BERTH	B4 / 57
+PAYMENT STATUS	CASH_ON_DELIVERY	Station Code/Name	VGLJ / VIRANGANA LAKSHMIBAI JHANSI JN
+Order Item Details:
+Item	Description	Price	Quantity	Amount
+Veg Thali	Paneer Gravy Rice 3 Roti Achar Salad Sweet MF spoon Napkin	₹ 165	2	₹ 330
+Sub Total	₹ 330
+GST	₹ 16.50
+DISCOUNT	₹ 0
+Grand Total (Inclusive of all taxes)	₹ 347
+Warm Regards,
+YATRI RESTRO

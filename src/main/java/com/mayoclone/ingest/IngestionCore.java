@@ -80,6 +80,10 @@ public class IngestionCore {
     private final JobQueue jobQueue;
     private final EnrichmentProperties enrichmentProperties;
     private final TrainNameService trainNameService;
+    private final com.mayoclone.repository.VendorRepository vendorRepo;
+
+    /** All delivery-date/business-day logic runs in IST — the trains and vendors are Indian. */
+    private static final java.time.ZoneId IST = java.time.ZoneId.of("Asia/Kolkata");
 
     public IngestionCore(List<IrctcEmailParser> parsers,
                          IrctcOrderRepository orderRepo,
@@ -89,7 +93,8 @@ public class IngestionCore {
                          OrderCommandService orderCommandService,
                          JobQueue jobQueue,
                          EnrichmentProperties enrichmentProperties,
-                         TrainNameService trainNameService) {
+                         TrainNameService trainNameService,
+                         com.mayoclone.repository.VendorRepository vendorRepo) {
         this.parsers = parsers;
         this.orderRepo = orderRepo;
         this.aggregatorService = aggregatorService;
@@ -99,6 +104,7 @@ public class IngestionCore {
         this.jobQueue = jobQueue;
         this.enrichmentProperties = enrichmentProperties;
         this.trainNameService = trainNameService;
+        this.vendorRepo = vendorRepo;
     }
 
     /**
@@ -106,7 +112,18 @@ public class IngestionCore {
      * a fresh order was stored (else 0). {@code accountId} is the owning tenant
      * (nullable only for an unmatched inbound recipient); {@code vendorId} may be null.
      */
-    public IngestResult process(Long accountId, Long vendorId, MailSourceType sourceType, RawMessage msg) {
+    public IngestResult process(Long accountId, Long vendorId, MailSourceType sourceType, RawMessage incoming) {
+        // 0. Guarantee a STABLE, per-email id even when a forwarded/webhook email has no
+        // Message-Id header. Without this, every header-less email hashed to the same
+        // generated id and dedup collapsed distinct real orders into one (silent data loss).
+        final RawMessage msg;
+        if (incoming.messageId() == null || incoming.messageId().isBlank()) {
+            String seed = safe(incoming.from()) + "|" + safe(incoming.subject()) + "|" + safe(incoming.body());
+            msg = new RawMessage(incoming.from(), incoming.subject(), incoming.body(),
+                    "synth-" + Integer.toUnsignedString(seed.hashCode()));
+        } else {
+            msg = incoming;
+        }
         // 1. Route the email to an aggregator by sender domain.
         Optional<Aggregator> agg = aggregatorService.findBySender(msg.from());
         if (agg.isEmpty()) {
@@ -147,19 +164,25 @@ public class IngestionCore {
                 && orderRepo.existsBySourceMessageId(parsed.sourceMessageId())) {
             return new IngestResult(1, 0);
         }
-        // Dedup 2: same (aggregator, externalOrderId) already stored.
-        if (orderRepo.existsByAggregatorAndExternalOrderId(agg.get(), parsed.externalOrderId())) {
+
+        IrctcOrder entity = toEntity(parsed, agg.get(), accountId, vendorId, msg.body());
+        // Flag (never hide) a low-confidence parse. The order is ALWAYS saved (unless no-signal).
+        applyReviewVerdict(entity, agg.get());
+
+        // Dedup 2: same (aggregator, externalOrderId) already stored — check the FINAL id we
+        // persist (trimmed, or a generated fallback), NOT the raw parsed value, so the guard
+        // matches what is actually in the table.
+        if (orderRepo.existsByAggregatorAndExternalOrderId(agg.get(), entity.getExternalOrderId())) {
             return new IngestResult(1, 0);
         }
 
-        IrctcOrder entity = toEntity(parsed, agg.get(), accountId, vendorId, msg.body());
-        // Flag (never hide) a low-confidence parse. The order is ALWAYS saved.
-        applyReviewVerdict(entity, agg.get());
         // A parse with NO order signal AT ALL — a generated (not-found) id, no items, no
         // amount, and no train number — is a promo/newsletter from the aggregator's domain,
-        // not an order. Skip it rather than clutter the board with an un-actionable card.
+        // not an order. Record it to the review queue (never silently drop, so a
+        // mis-classified real order is always recoverable) instead of cluttering the board.
         if (hasNoOrderSignal(entity, agg.get())) {
-            log.debug("Skipping no-signal email from {} (subject '{}')", msg.from(), msg.subject());
+            log.debug("No-signal email from {} (subject '{}') → review queue", msg.from(), msg.subject());
+            recordFailure(accountId, vendorId, sourceType, msg, IngestFailureReason.NO_ORDER_SIGNAL);
             return new IngestResult(1, 0);
         }
         IrctcOrder saved = orderRepo.save(entity);
@@ -247,14 +270,27 @@ public class IngestionCore {
         o.setCoach(p.coach());
         o.setBerth(p.berth());
         o.setBoardingStationCode(p.boardingStationCode());
-        o.setDeliveryStationCode(p.deliveryStationCode());
-        o.setDeliveryStationName(p.deliveryStationName());
+        // Delivery station: prefer the email; when it carries none, fall back to the
+        // vendor's REGISTERED station (captured at restaurant onboarding) so the KOT/board
+        // always shows WHERE to deliver instead of a blank cell.
+        String stationCode = p.deliveryStationCode();
+        String stationName = p.deliveryStationName();
+        if (isBlank(stationCode) && isBlank(stationName) && vendorId != null && vendorRepo != null) {
+            com.mayoclone.domain.Vendor v = vendorRepo.findById(vendorId).orElse(null);
+            if (v != null) {
+                stationCode = v.getStationCode();
+                stationName = v.getStationName();
+            }
+        }
+        o.setDeliveryStationCode(stationCode);
+        o.setDeliveryStationName(stationName);
         o.setPassengerName(p.passengerName() != null ? p.passengerName() : "Unknown");
         o.setPassengerPhone(p.passengerPhone());
         // An order with no parseable delivery date must still be actionable "today"
         // instead of vanishing from the Daily Business board / reports / settlement,
-        // which all window on deliveryDate. Fall back to the arrival day.
-        o.setDeliveryDate(p.deliveryDate() != null ? p.deliveryDate() : LocalDate.now());
+        // which all window on deliveryDate. Fall back to the arrival day IN IST — using the
+        // JVM default zone (UTC on most hosts) would stamp an evening-IST order a day early.
+        o.setDeliveryDate(p.deliveryDate() != null ? p.deliveryDate() : LocalDate.now(IST));
         o.setDeliverySlot(p.deliverySlot());
         o.setAmount(p.amount());
         o.setCurrency(p.currency() != null ? p.currency() : "INR");
@@ -268,6 +304,12 @@ public class IngestionCore {
         // Prefer the payment mode the parser extracted from the email; fall back to
         // the body-text heuristic only when the parser found no explicit signal.
         o.setPaymentMode(resolvePaymentMode(p.paymentMode(), body));
+        // COD orders whose email stated no explicit "amount to collect" (IRCTC, RailRecipe,
+        // Rajbhog, Yatri …) still need the rider to collect the grand total — default it so
+        // the collect figure on the KOT/board is never blank.
+        if (o.getPaymentMode() == PaymentMode.COD && o.getAmountToCollect() == null) {
+            o.setAmountToCollect(o.getAmount());
+        }
         o.setStatus(OrderStatus.NEW);
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
@@ -338,6 +380,11 @@ public class IngestionCore {
         return s == null || s.isBlank();
     }
 
+    /** Null-safe string for hashing (a null field must not read as the literal "null"). */
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
     /**
      * A real order id must be non-blank, at least 3 chars, and contain a digit. This
      * rejects a bare alphabetic dictionary word ("for", "Booking") and anything too
@@ -359,7 +406,9 @@ public class IngestionCore {
      */
     private static String generatedOrderId(String aggregatorCode, String sourceMessageId) {
         String code = (aggregatorCode == null || aggregatorCode.isBlank()) ? "GEN" : aggregatorCode;
-        return code + "-" + Math.abs(String.valueOf(sourceMessageId).hashCode());
+        // Unsigned so Integer.MIN_VALUE can't yield a negative "AGG--123…" that looksGenerated
+        // (which requires trailing digits) would then fail to recognise.
+        return code + "-" + Integer.toUnsignedString(String.valueOf(sourceMessageId).hashCode());
     }
 
     /**

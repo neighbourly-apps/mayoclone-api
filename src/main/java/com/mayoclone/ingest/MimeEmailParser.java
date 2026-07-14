@@ -188,7 +188,7 @@ public class MimeEmailParser {
     }
 
     /** Decode named + numeric HTML entities. Applied to BOTH html-stripped and plain bodies. */
-    static String decodeEntities(String s) {
+    public static String decodeEntities(String s) {
         s = s.replace("&nbsp;", " ")
                 .replace("&amp;", "&")
                 .replace("&lt;", "<")

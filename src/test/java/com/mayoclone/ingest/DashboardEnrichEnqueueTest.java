@@ -71,7 +71,8 @@ class DashboardEnrichEnqueueTest {
                 new EnrichmentProperties(enrichEnabled, "IRCTC_ECATERING", 1500, "", "", "");
         return new IngestionCore(List.of(parser), orderRepo, aggregatorService, failureRepo, metrics,
                 orderCommandService, jobQueue, props,
-                mock(com.mayoclone.service.TrainNameService.class));
+                mock(com.mayoclone.service.TrainNameService.class),
+                mock(com.mayoclone.repository.VendorRepository.class));
     }
 
     /** A complete parse but with NO passenger name (→ stored as "Unknown"). */

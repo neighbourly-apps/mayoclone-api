@@ -50,10 +50,10 @@ public class RelfoodEmailParser extends GenericIrctcEmailParser {
     // the captured block may span multiple lines.
     private static final Pattern RELFOOD_ITEM_BLOCK = Pattern.compile(
             "(?is)Item\\s*Price\\s*Quantity\\s*Total\\s*(.*?)\\s*Sub\\s*Total");
-    // Old flattened layout: the "<price> <qty> <total>" columns are space-separated
-    // and trail the (multi-word) name/description on one row.
+    // Old flattened SINGLE-LINE layout: the whole item sits on one line with the
+    // "<price> <qty> <total>" columns space-separated after the (multi-word) name/description.
     private static final Pattern RELFOOD_ITEM_SPACED = Pattern.compile(
-            "(?s)^(.*?)\\s+([0-9]+(?:\\.[0-9]+)?)\\s+([0-9]+)\\s+([0-9]+(?:\\.[0-9]+)?)$");
+            "^(.*?)\\s+([0-9]+(?:\\.[0-9]+)?)\\s+([0-9]+)\\s+([0-9]+(?:\\.[0-9]+)?)$");
     // New one-field-per-line layout: name on its own line, then a description whose
     // tail has "<price><qty><total>" glued on with NO separators ("…Cutlery1941194").
     // Group 1 = name/description (ends on a non-digit); group 2 = the glued digit run.
@@ -78,9 +78,17 @@ public class RelfoodEmailParser extends GenericIrctcEmailParser {
     protected LocalDate extractDeliveryDate(String body) {
         Matcher m = RELFOOD_DATETIME.matcher(body);
         if (m.find()) {
-            LocalDate d = parseDate(m.group(1));
-            if (d != null) {
-                return d;
+            // RELFOOD is the one aggregator that genuinely uses US M/d/yyyy (its "7/13/2026"
+            // proves it — 13 can't be a month). Parse it explicitly here so the generic
+            // dd/MM-first parseDate doesn't flip an ambiguous "7/9/2026" to 7 Sep.
+            try {
+                return LocalDate.parse(m.group(1),
+                        java.time.format.DateTimeFormatter.ofPattern("M/d/yyyy", java.util.Locale.ENGLISH));
+            } catch (RuntimeException ignored) {
+                LocalDate d = parseDate(m.group(1));
+                if (d != null) {
+                    return d;
+                }
             }
         }
         return super.extractDeliveryDate(body);
@@ -99,25 +107,28 @@ public class RelfoodEmailParser extends GenericIrctcEmailParser {
     protected List<OrderItem> extractItems(String body) {
         Matcher block = RELFOOD_ITEM_BLOCK.matcher(body);
         if (block.find()) {
-            OrderItem item = parseRelfoodItem(block.group(1).trim());
-            if (item != null) {
-                return List.of(item);
+            String blockText = block.group(1).trim();
+            // (a) GLUED render ("…Cutlery1941194", numbers welded onto the description).
+            OrderItem glued = parseGluedItem(blockText);
+            if (glued != null) {
+                return List.of(glued);
+            }
+            // (b) SINGLE flattened line "<name> <price> <qty> <total>" (one item, no newline).
+            if (!blockText.contains("\n")) {
+                Matcher spaced = RELFOOD_ITEM_SPACED.matcher(blockText);
+                if (spaced.matches()) {
+                    return List.of(new OrderItem(collapse(spaced.group(1)),
+                            Math.max(Integer.parseInt(spaced.group(3)), 1), parseMoney(spaced.group(2))));
+                }
             }
         }
+        // (c) MULTI-LINE columnar layout — the generic columnar extractor separates each dish
+        // name from its description row and handles multiple items cleanly. Delegate to it.
         return super.extractItems(body);
     }
 
-    /** Parse the single item that sits in the item block, in either RELFOOD layout. */
-    private OrderItem parseRelfoodItem(String blockText) {
-        // (a) space-separated trailing columns (flattened one-line layout).
-        Matcher spaced = RELFOOD_ITEM_SPACED.matcher(blockText);
-        if (spaced.matches()) {
-            return new OrderItem(collapse(spaced.group(1)),
-                    Math.max(Integer.parseInt(spaced.group(3)), 1),
-                    parseMoney(spaced.group(2)));
-        }
-        // (b) glued trailing columns (one-field-per-line layout): recover the
-        // "<price><qty><total>" run and split it on the price × qty == total invariant.
+    /** Glued one-field-per-line layout: a single "<name/desc><price><qty><total>" run. */
+    private OrderItem parseGluedItem(String blockText) {
         Matcher glued = RELFOOD_ITEM_GLUED.matcher(blockText);
         if (glued.matches()) {
             int[] pqt = splitGluedColumns(glued.group(2));

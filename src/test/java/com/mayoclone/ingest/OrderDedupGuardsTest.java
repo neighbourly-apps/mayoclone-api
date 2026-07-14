@@ -64,7 +64,8 @@ class OrderDedupGuardsTest {
                 new com.mayoclone.enrich.EnrichmentProperties(false, "IRCTC_ECATERING", 1500, "", "", "");
         core = new IngestionCore(List.of(parser), orderRepo, aggregatorService, failureRepo, metrics,
                 orderCommandService, jobQueue, enrichProps,
-                mock(com.mayoclone.service.TrainNameService.class));
+                mock(com.mayoclone.service.TrainNameService.class),
+                mock(com.mayoclone.repository.VendorRepository.class));
 
         Aggregator agg = new Aggregator();
         agg.setCode("ZOOP");

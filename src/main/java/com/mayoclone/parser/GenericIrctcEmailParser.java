@@ -43,6 +43,12 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     private static final String S = "[\\s\\u00a0]";
     /** Horizontal whitespace only (space, tab, nbsp) — stays on one line/cell. */
     private static final String H = "[ \\t\\u00a0]";
+    /**
+     * Order-id value capture: alphanumeric with INTERNAL hyphens allowed (never leading/
+     * trailing), so hyphenated references like {@code RR-889231} are captured whole instead
+     * of stopping at the hyphen and yielding just {@code RR}.
+     */
+    private static final String ID_CAP = "([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)";
     /** A cell boundary: a tab, a run of 2+ spaces/nbsp, or a line break. */
     private static final String CELL_END = "(?=\\t| {2,}|\\u00a0{2,}|\\r|\\n|$)";
 
@@ -66,9 +72,10 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
 
     // Value cell after any "Train …" label, captured up to the next cell boundary.
     // Handles "TRAIN: 22538 / KUSHINAGAR EXP", "Train No./Name  22538 / …",
+    // "TRAIN No /NAME  12808 / SAMTA EXPRESS" (spaces around the slash, Yatri Restro),
     // "Train  : Kurj Udz Exp/ 19665", bare "TRAIN No  16032".
     protected static final Pattern TRAIN = Pattern.compile(
-            "Train\\b" + H + "*(?:no\\.?/name|no\\.?|number|name)?" + H + "*[:#]?" + H + "*"
+            "Train\\b" + H + "*(?:no\\.?" + H + "*/" + H + "*name|no\\.?|number|name)?" + H + "*[:#]?" + H + "*"
                     + "([^\\r\\n\\t]+?)" + CELL_END,
             Pattern.CASE_INSENSITIVE);
     private static final Pattern FIVE_DIGITS = Pattern.compile("\\d{5}");
@@ -91,9 +98,13 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             "Boarding" + S + "*(?:Station)?" + S + "*(?:Code)?" + S + "*[:#-]?" + S + "*([A-Z]{2,5})\\b",
             Pattern.CASE_INSENSITIVE);
 
-    // Value cell after a station label ("Delivery Station", "Station Name & Code").
+    // Value cell after a station label: "Delivery Station", "Station Name & Code",
+    // "Station Code/Name" (Yatri Restro), "Station Name", "Station Code".
     protected static final Pattern STATION = Pattern.compile(
-            "(?:delivery" + S + "*station|station" + S + "*name(?:" + S + "*&" + S + "*code)?)"
+            // \b so "delivery" can't match the tail of "CASH_ON_DELIVERY" and bleed into the
+            // next "Station …" cell (which stole the value on Yatri Restro's COD line).
+            "(?:\\bdelivery" + S + "*station|\\bstation" + S + "*(?:name" + S + "*&" + S + "*code|code"
+                    + S + "*/" + S + "*name|name|code))"
                     + H + "*[:#-]?" + H + "*([^\\r\\n\\t]+?)" + CELL_END,
             Pattern.CASE_INSENSITIVE);
 
@@ -269,11 +280,11 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         if (v != null) return v;
         v = firstGroup(body, "Invoice" + S + "+([A-Za-z0-9]+)");
         if (v != null) return v;
-        v = firstGroup(body, "Order" + S + "*Number" + S + "*[:#-]?" + S + "*([A-Za-z0-9]+)");
+        v = firstGroup(body, "Order" + S + "*Number" + S + "*[:#-]?" + S + "*" + ID_CAP);
         if (v != null) return v;
-        v = firstGroup(body, "Order" + S + "*(?:id|no\\.?)" + S + "*[:#-]?" + S + "*([A-Za-z0-9]+)");
+        v = firstGroup(body, "Order" + S + "*(?:id|no\\.?)" + S + "*[:#-]?" + S + "*" + ID_CAP);
         if (v != null) return v;
-        v = firstGroup(body, "Order" + S + "*#" + S + "*[:#-]?" + S + "*([A-Za-z0-9]+)");
+        v = firstGroup(body, "Order" + S + "*#" + S + "*[:#-]?" + S + "*" + ID_CAP);
         if (v != null) return v;
         v = firstGroup(body, "#([A-Za-z0-9]{3,})");
         return v != null ? v : fallback;
@@ -529,8 +540,15 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
             if (raw.matches("\\d{4}-\\d{2}-\\d{2}")) {
                 return LocalDate.parse(raw);
             }
-            if (raw.matches("\\d{1,2}/\\d{1,2}/\\d{4}")) { // US slash: M/d/yyyy
-                return LocalDate.parse(raw, DateTimeFormatter.ofPattern("M/d/yyyy", Locale.ENGLISH));
+            if (raw.matches("\\d{1,2}/\\d{1,2}/\\d{4}")) {
+                // Indian dd/MM/yyyy preferred (every partner is an Indian service). Fall
+                // back to US M/d/yyyy only when dd/MM is impossible (first field > 12), so
+                // "09/07/2026" is 9 Jul (not 7 Sep) and "07/13/2026" still reads as 13 Jul.
+                try {
+                    return LocalDate.parse(raw, DateTimeFormatter.ofPattern("d/M/yyyy", Locale.ENGLISH));
+                } catch (RuntimeException indianFormatFailed) {
+                    return LocalDate.parse(raw, DateTimeFormatter.ofPattern("M/d/yyyy", Locale.ENGLISH));
+                }
             }
             if (raw.matches("\\d{1,2}-\\d{1,2}-\\d{4}")) { // Indian hyphen: dd-MM-yyyy
                 return LocalDate.parse(raw, DateTimeFormatter.ofPattern("d-M-yyyy", Locale.ENGLISH));
@@ -811,8 +829,12 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
         return qty == Integer.MAX_VALUE ? 1 : qty;
     }
 
+    // NOTE: deliberately does NOT include a bare "extra" — IRCTC add-on items are commonly
+    // named "Extra Gravy"/"Extra Roti"/"Extra Curd", and matching the substring dropped them
+    // from the KOT while the grand total still counted them. No real bill-summary row in any
+    // supported aggregator is labelled just "Extra".
     private static final Pattern SUMMARY = Pattern.compile(
-            "total|gst|discount|delivery|payable|balance|cashback|extra" + "|paid|base" + S + "*price"
+            "total|gst|discount|delivery|payable|balance|cashback" + "|paid|base" + S + "*price"
                     + "|subtotal|\\bnet\\b|to" + S + "*collect|charge",
             Pattern.CASE_INSENSITIVE);
 
@@ -847,7 +869,16 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
     }
 
     protected BigDecimal parseMoney(String raw) {
-        return new BigDecimal(raw.replaceAll("[^0-9.]", ""));
+        // Strip a currency token (Rs./Rs/₹/INR) and thousands separators, then take the
+        // numeric value. The old blind replaceAll("[^0-9.]","") turned "Rs. 159" into
+        // ".159" (=0.16) and threw on "Rs. 159.00" (two dots) — a whole order dumped to
+        // the review queue. Anchoring on the number is robust to any currency prefix.
+        String cleaned = raw.replaceAll("(?i)rs\\.?|inr|₹", " ").replace(",", "");
+        Matcher m = Pattern.compile("\\d+(?:\\.\\d+)?").matcher(cleaned);
+        if (!m.find()) {
+            throw new NumberFormatException("no numeric value in '" + raw + "'");
+        }
+        return new BigDecimal(m.group());
     }
 
     // ---- vertical (one-value-per-line) layout helpers -----------------------
