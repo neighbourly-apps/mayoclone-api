@@ -125,6 +125,7 @@ class InboundMailgunWebhookIntegrationTest extends AbstractIntegrationTest {
         vendor.put("restaurantName", "Mailgun Foods");
         vendor.put("ownerEmail", "owner-" + System.nanoTime() + "@test.local");
         vendor.put("stationCode", "NDLS");
+        vendor.put("stationName", "New Delhi");
         vendor.put("phone", "9876543210");
         vendor.put("sourceType", "FORWARDING");
 

@@ -190,7 +190,7 @@ public class OrderService {
     private InvoiceDto.Line toLine(OrderItem item) {
         BigDecimal price = item.getPrice() != null ? item.getPrice() : BigDecimal.ZERO;
         BigDecimal lineTotal = price.multiply(BigDecimal.valueOf(item.getQty()));
-        return new InvoiceDto.Line(item.getName(), item.getQty(), price, lineTotal);
+        return new InvoiceDto.Line(item.getName(), item.getDescription(), item.getQty(), price, lineTotal);
     }
 
     /**

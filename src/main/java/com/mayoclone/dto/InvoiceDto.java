@@ -63,6 +63,6 @@ public record InvoiceDto(
     ) {
     }
 
-    public record Line(String name, int qty, BigDecimal price, BigDecimal lineTotal) {
+    public record Line(String name, String description, int qty, BigDecimal price, BigDecimal lineTotal) {
     }
 }

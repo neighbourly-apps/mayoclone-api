@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -108,13 +109,26 @@ public class RelfoodEmailParser extends GenericIrctcEmailParser {
         Matcher block = RELFOOD_ITEM_BLOCK.matcher(body);
         if (block.find()) {
             String blockText = block.group(1).trim();
-            // (a) GLUED render ("…Cutlery1941194", numbers welded onto the description).
-            OrderItem glued = parseGluedItem(blockText);
-            if (glued != null) {
-                return List.of(glued);
-            }
-            // (b) SINGLE flattened line "<name> <price> <qty> <total>" (one item, no newline).
-            if (!blockText.contains("\n")) {
+            if (blockText.contains("\n")) {
+                // (a) GLUED multi-item render (the LIVE production shape): each item is a dish
+                // NAME on its own line, then a description line with "<price><qty><total>" welded
+                // onto its tail ("…Napkin2541254"). Splits every item and keeps name/desc apart.
+                List<OrderItem> glued = parseGluedItems(blockText);
+                if (!glued.isEmpty()) {
+                    return glued;
+                }
+                // (b) COLUMNAR render: NAME line then "<description>  <price>  <qty>  <total>"
+                // (2+ space cells). Captures the description too.
+                List<OrderItem> multi = parseMultiLineItems(blockText);
+                if (!multi.isEmpty()) {
+                    return multi;
+                }
+            } else {
+                // (c) SINGLE flattened line — glued tail, else space-separated columns.
+                OrderItem gluedOne = parseGluedItem(blockText);
+                if (gluedOne != null) {
+                    return List.of(gluedOne);
+                }
                 Matcher spaced = RELFOOD_ITEM_SPACED.matcher(blockText);
                 if (spaced.matches()) {
                     return List.of(new OrderItem(collapse(spaced.group(1)),
@@ -122,9 +136,107 @@ public class RelfoodEmailParser extends GenericIrctcEmailParser {
                 }
             }
         }
-        // (c) MULTI-LINE columnar layout — the generic columnar extractor separates each dish
-        // name from its description row and handles multiple items cleanly. Delegate to it.
         return super.extractItems(body);
+    }
+
+    /**
+     * Parse the GLUED multi-item layout: a dish NAME on its own line, then a description line
+     * whose tail welds the "<price><qty><total>" digits on ("…Napkin2541254"). Splits EVERY
+     * item (fixing the collapse-to-one bug), keeps the name and description separate, and
+     * recovers price/qty via the price×qty==total invariant. Empty when the block isn't glued.
+     */
+    private List<OrderItem> parseGluedItems(String blockText) {
+        List<OrderItem> items = new ArrayList<>();
+        List<String> pending = new ArrayList<>();
+        for (String raw : blockText.split("\\r?\\n")) {
+            String line = raw.strip();
+            if (line.isEmpty()) {
+                continue;
+            }
+            Matcher m = RELFOOD_ITEM_GLUED.matcher(line);
+            int[] pqt = m.matches() ? splitGluedColumns(m.group(2)) : null;
+            if (pqt != null) {
+                String descTail = m.group(1).strip();
+                String name;
+                String description;
+                if (!pending.isEmpty()) {
+                    name = pending.get(0);
+                    List<String> descParts = new ArrayList<>(pending.subList(1, pending.size()));
+                    if (!descTail.isEmpty()) {
+                        descParts.add(descTail);
+                    }
+                    description = descParts.isEmpty() ? null : collapse(String.join(" ", descParts));
+                } else {
+                    name = descTail;
+                    description = null;
+                }
+                items.add(new OrderItem(name, description, Math.max(pqt[1], 1), BigDecimal.valueOf(pqt[0])));
+                pending.clear();
+            } else {
+                pending.add(line);
+            }
+        }
+        return items;
+    }
+
+    // Column boundary in a flattened row: a tab or a run of 2+ spaces/nbsp.
+    private static final Pattern RELFOOD_CELL_SPLIT = Pattern.compile("\\t+| {2,}|\\u00a0{2,}");
+    // A whole cell that is purely a number (optionally ₹/Rs/INR-prefixed).
+    private static final Pattern RELFOOD_NUM_CELL = Pattern.compile(
+            "(?i)^(?:₹|Rs\\.?|INR)?\\s*([0-9][0-9,]*(?:\\.[0-9]+)?)$");
+
+    /**
+     * Parse the multi-line RELFOOD item block, pairing each standalone dish NAME line
+     * with the following "<description>  <price>  <qty>  <total>" value row so both the
+     * name and the description land on the {@link OrderItem}. Multiple items are
+     * supported. Returns empty when the block isn't in this shape (caller falls back
+     * to the generic extractor).
+     */
+    private List<OrderItem> parseMultiLineItems(String blockText) {
+        List<OrderItem> items = new ArrayList<>();
+        String pendingName = null;
+        for (String raw : blockText.split("\\r?\\n")) {
+            String line = raw.strip();
+            if (line.isEmpty()) {
+                continue;
+            }
+            String[] cells = RELFOOD_CELL_SPLIT.split(line);
+            // Peel the trailing numeric columns (price, qty, total) off the row.
+            List<BigDecimal> nums = new ArrayList<>();
+            int k = cells.length - 1;
+            while (k >= 0) {
+                Matcher m = RELFOOD_NUM_CELL.matcher(cells[k].strip());
+                if (!m.matches()) {
+                    break;
+                }
+                nums.add(0, parseMoney(m.group(1)));
+                k--;
+            }
+            StringBuilder text = new StringBuilder();
+            for (int t = 0; t <= k; t++) {
+                String c = cells[t].strip();
+                if (c.isEmpty()) {
+                    continue;
+                }
+                if (text.length() > 0) {
+                    text.append(' ');
+                }
+                text.append(c);
+            }
+            String textCell = collapse(text.toString());
+            if (nums.size() >= 3 && !textCell.isEmpty()) {
+                // Value row: <description> <price> <qty> <total>.
+                BigDecimal price = nums.get(0);
+                int qty = Math.max(nums.get(1).intValue(), 1);
+                String name = pendingName != null ? pendingName : textCell;
+                items.add(new OrderItem(name, textCell, qty, price));
+                pendingName = null;
+            } else if (nums.isEmpty() && !textCell.isEmpty()) {
+                // A standalone dish-name line.
+                pendingName = textCell;
+            }
+        }
+        return items;
     }
 
     /** Glued one-field-per-line layout: a single "<name/desc><price><qty><total>" run. */

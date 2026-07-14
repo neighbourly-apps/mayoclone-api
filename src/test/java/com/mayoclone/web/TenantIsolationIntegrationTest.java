@@ -158,6 +158,7 @@ class TenantIsolationIntegrationTest extends AbstractIntegrationTest {
         m.put("restaurantName", "A Foods");
         m.put("ownerEmail", "owner-a@test.local");
         m.put("stationCode", "NDLS");
+        m.put("stationName", "New Delhi");
         m.put("phone", "9876543210");
         m.put("sourceType", "FORWARDING");
         return m;

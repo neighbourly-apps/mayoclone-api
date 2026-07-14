@@ -158,6 +158,7 @@ class InboundWebhookIntegrationTest extends AbstractIntegrationTest {
         vendor.put("restaurantName", "Inbound Foods");
         vendor.put("ownerEmail", "owner-" + System.nanoTime() + "@test.local");
         vendor.put("stationCode", "NDLS");
+        vendor.put("stationName", "New Delhi");
         vendor.put("phone", "9876543210");
         vendor.put("sourceType", "FORWARDING");
 

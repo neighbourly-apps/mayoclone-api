@@ -38,6 +38,7 @@ class VendorDashboardCredentialIntegrationTest extends AbstractIntegrationTest {
         Map<String, Object> vendor = new LinkedHashMap<>();
         vendor.put("restaurantName", "Enrich Foods");
         vendor.put("ownerEmail", "owner@enrich.local");
+        vendor.put("stationName", "New Delhi");
         vendor.put("sourceType", "IMAP");
         vendor.put("imapHost", "imap.enrich.local");
         vendor.put("imapPassword", "imap-pw");
