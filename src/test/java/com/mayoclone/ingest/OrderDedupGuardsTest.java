@@ -127,7 +127,7 @@ class OrderDedupGuardsTest {
 
     @Test
     void imapStableMessageIdFallbackIsStableAndNotRandom() throws Exception {
-        ImapMailSource src = new ImapMailSource(30, 200, 0);
+        ImapMailSource src = new ImapMailSource(30, 200, 0, 0);
         MimeMessage mime = new MimeMessage(Session.getInstance(new Properties()));
         mime.setSubject("Your order is confirmed");
         mime.setSentDate(new Date(1_700_000_000_000L));

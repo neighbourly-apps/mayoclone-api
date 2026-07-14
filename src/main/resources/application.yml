@@ -104,9 +104,12 @@ mayoclone:
     # cycles.
     backfill-count: ${MAYOCLONE_IMAP_BACKFILL_COUNT:30}
     max-per-fetch: ${MAYOCLONE_IMAP_MAX_PER_FETCH:200}
-    # When > 0, the FIRST sync ingests only messages sent within this many hours (so a
-    # large mailbox doesn't stall fetching hundreds of old bodies). The UID cursor still
-    # baselines past all recent mail, so later polls pick up only new orders. 0 = disabled.
+    # The FIRST sync of a newly connected mailbox ingests ONLY messages sent within this
+    # many MINUTES (default 15) — we never pull older history. The UID cursor still
+    # baselines past all recent mail, so later polls pick up only genuinely new orders.
+    # This is the primary knob; it wins over backfill-since-hours. 0 = disabled.
+    backfill-since-minutes: ${MAYOCLONE_IMAP_BACKFILL_SINCE_MINUTES:15}
+    # Legacy hours-based window; used only when backfill-since-minutes is 0. 0 = disabled.
     backfill-since-hours: ${MAYOCLONE_IMAP_BACKFILL_SINCE_HOURS:0}
   gmail:
     # Gmail push ingestion (Google Pub/Sub + users.watch history sync). ALL blank by

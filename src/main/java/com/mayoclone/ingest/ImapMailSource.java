@@ -56,18 +56,30 @@ public class ImapMailSource implements MailSource {
     private final int backfillCount;
     private final int maxPerFetch;
     private final int backfillSinceHours;
+    private final int backfillSinceMinutes;
 
     public ImapMailSource(
             @Value("${mayoclone.imap.backfill-count:30}") int backfillCount,
             @Value("${mayoclone.imap.max-per-fetch:200}") int maxPerFetch,
-            @Value("${mayoclone.imap.backfill-since-hours:0}") int backfillSinceHours) {
+            @Value("${mayoclone.imap.backfill-since-hours:0}") int backfillSinceHours,
+            @Value("${mayoclone.imap.backfill-since-minutes:15}") int backfillSinceMinutes) {
         this.backfillCount = backfillCount;
         this.maxPerFetch = maxPerFetch;
-        // When > 0, the FIRST (fresh-start) sync ingests only messages sent within this
-        // many hours — so we don't fetch hundreds of old bodies. 0 = disabled (use the
-        // message-count backfill). The UID cursor still baselines past all recent mail,
-        // so subsequent polls pick up only genuinely new orders.
+        // The FIRST (fresh-start) sync of a newly connected mailbox ingests only messages
+        // sent within a recent window — we NEVER pull older history. The window is
+        // backfill-since-minutes (default 15); backfill-since-hours is a legacy override.
+        // Everything older is still counted toward the UID cursor (so we baseline past it)
+        // but its body is never fetched, so subsequent polls pick up only genuinely new mail.
         this.backfillSinceHours = backfillSinceHours;
+        this.backfillSinceMinutes = backfillSinceMinutes;
+    }
+
+    /** The fresh-start backfill window in minutes (minutes knob wins; else hours; else 0). */
+    private int backfillWindowMinutes() {
+        if (backfillSinceMinutes > 0) {
+            return backfillSinceMinutes;
+        }
+        return backfillSinceHours > 0 ? backfillSinceHours * 60 : 0;
     }
 
     @Override
@@ -144,14 +156,16 @@ public class ImapMailSource implements MailSource {
         Long knownValidity = vendor.getImapUidValidity();
 
         Message[] candidates;
+        int windowMinutes = backfillWindowMinutes();
         boolean freshStart = knownValidity == null || !knownValidity.equals(validity) || lastUid == null;
-        if (freshStart && backfillSinceHours > 0) {
+        if (freshStart && windowMinutes > 0) {
             // Time-windowed first sync: ask the SERVER for just the recent messages
-            // (IMAP SINCE, day-granular; the exact hour window is applied per-message in
+            // (IMAP SINCE, day-granular; the exact minute window is applied per-message in
             // the loop). This avoids inbox.getMessages()+per-message getUID over the WHOLE
             // mailbox, which round-trips per message and stalls on a large Gmail inbox.
+            long lookbackDays = Math.max(1, windowMinutes / 1440 + 1);
             java.util.Date since = java.util.Date.from(java.time.LocalDate.now()
-                    .minusDays(backfillSinceHours >= 24 ? (backfillSinceHours / 24) + 1 : 1)
+                    .minusDays(lookbackDays)
                     .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant());
             candidates = inbox.search(
                     new jakarta.mail.search.ReceivedDateTerm(jakarta.mail.search.ComparisonTerm.GE, since));
@@ -172,13 +186,13 @@ public class ImapMailSource implements MailSource {
             inbox.fetch(candidates, fp);
         }
 
-        // On a fresh start, optionally ingest only messages within a recent time window
-        // (e.g. the last 2 hours) so we don't fetch hundreds of old bodies. Messages
-        // outside the window are still counted toward the UID cursor (so we baseline past
-        // them) but their bodies are never fetched. The window uses the message's sent
-        // Date header (already in the ENVELOPE — no extra round-trip).
-        java.time.Instant sinceCutoff = (freshStart && backfillSinceHours > 0)
-                ? java.time.Instant.now().minus(backfillSinceHours, java.time.temporal.ChronoUnit.HOURS)
+        // On a fresh start, ingest only messages within the recent window (default the
+        // last 15 minutes) so we NEVER fetch old bodies. Messages outside the window are
+        // still counted toward the UID cursor (so we baseline past them) but their bodies
+        // are never fetched. The window uses the message's sent Date header (already in the
+        // ENVELOPE — no extra round-trip).
+        java.time.Instant sinceCutoff = (freshStart && windowMinutes > 0)
+                ? java.time.Instant.now().minus(windowMinutes, java.time.temporal.ChronoUnit.MINUTES)
                 : null;
 
         long base = lastUid == null ? 0L : lastUid;

@@ -155,6 +155,13 @@ public class IngestionCore {
         IrctcOrder entity = toEntity(parsed, agg.get(), accountId, vendorId, msg.body());
         // Flag (never hide) a low-confidence parse. The order is ALWAYS saved.
         applyReviewVerdict(entity, agg.get());
+        // A parse with NO order signal AT ALL — a generated (not-found) id, no items, no
+        // amount, and no train number — is a promo/newsletter from the aggregator's domain,
+        // not an order. Skip it rather than clutter the board with an un-actionable card.
+        if (hasNoOrderSignal(entity, agg.get())) {
+            log.debug("Skipping no-signal email from {} (subject '{}')", msg.from(), msg.subject());
+            return new IngestResult(1, 0);
+        }
         IrctcOrder saved = orderRepo.save(entity);
         metrics.orderIngested(agg.get().getCode(), sourceType == null ? null : sourceType.name());
         // Record the initial NEW status event + push a realtime NEW_ORDER event.
@@ -307,6 +314,19 @@ public class IngestionCore {
      * when it finds no real order id. Detect that synthesized shape so the order is
      * flagged for review rather than trusted.
      */
+    /**
+     * True when a parse yielded NO order signal whatsoever — a generated (not-found)
+     * order id AND no items AND no positive amount AND no train number. Such an email is
+     * a promo/newsletter from the aggregator's domain, not an order, and must not be saved.
+     */
+    private boolean hasNoOrderSignal(IrctcOrder o, Aggregator agg) {
+        boolean noItems = o.getItems() == null || o.getItems().isEmpty();
+        boolean noAmount = o.getAmount() == null || o.getAmount().signum() <= 0;
+        boolean noTrain = isBlank(o.getTrainNumber());
+        boolean generatedId = looksGenerated(o.getExternalOrderId(), agg.getCode());
+        return noItems && noAmount && noTrain && generatedId;
+    }
+
     private static boolean looksGenerated(String externalOrderId, String aggregatorCode) {
         if (externalOrderId == null || aggregatorCode == null || aggregatorCode.isBlank()) {
             return false;
