@@ -151,6 +151,14 @@ public class IrctcOrder {
     )
     private List<OrderItem> items = new ArrayList<>();
 
+    /** Extra named aggregator charges (gateway/platform fees, …) beyond the standard bill lines. */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "order_charge",
+            joinColumns = @JoinColumn(name = "order_id")
+    )
+    private List<OrderCharge> charges = new ArrayList<>();
+
     /**
      * The FULL, untruncated raw email body this order was parsed from. The ultimate
      * safety net: even if a field parsed wrong, the source is always recoverable and
@@ -460,6 +468,14 @@ public class IrctcOrder {
 
     public void setItems(List<OrderItem> items) {
         this.items = items;
+    }
+
+    public List<OrderCharge> getCharges() {
+        return charges;
+    }
+
+    public void setCharges(List<OrderCharge> charges) {
+        this.charges = charges;
     }
 
     public String getRawEmail() {

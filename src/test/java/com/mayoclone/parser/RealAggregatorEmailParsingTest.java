@@ -316,9 +316,11 @@ class RealAggregatorEmailParsingTest {
             Base Price Total    ₹ 460
             (+) GST on food    ₹ 20.5
             (+) Delivery Charge    ₹ 25.42
+            (+) GST on Delivery Charge    ₹ 4.58
+            (+) Gateway Platform Fees    ₹ 30
             (-) Discount    ₹ 50
-            Order Total    ₹ 461
-            (-) Paid Online    ₹ 461
+            Order Total    ₹ 491
+            (-) Paid Online    ₹ 491
             BALANCE TO PAY    ₹ 0
             """;
 
@@ -344,7 +346,12 @@ class RealAggregatorEmailParsingTest {
         assertEquals("Veg Biryani", item.getName());
         assertEquals(2, item.getQty());
         assertMoney("230", item.getPrice());
-        assertMoney("461", p.amount());
+        assertMoney("491", p.amount());
+        // The uncategorised extra fee (Gateway Platform Fees) is captured as a named charge;
+        // "GST on Delivery Charge" is NOT (it's already summed into gstAmount) → no double-count.
+        assertEquals(1, p.charges().size());
+        assertEquals("Gateway Platform Fees", p.charges().get(0).getLabel());
+        assertMoney("30", p.charges().get(0).getAmount());
     }
 
     // 6) Rajbhog Khana --------------------------------------------------------

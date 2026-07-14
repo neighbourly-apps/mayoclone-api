@@ -1,5 +1,6 @@
 package com.mayoclone.parser;
 
+import com.mayoclone.domain.OrderCharge;
 import com.mayoclone.domain.OrderItem;
 
 import java.math.BigDecimal;
@@ -36,6 +37,24 @@ public record ParsedOrder(
         BigDecimal subtotalAmount,
         BigDecimal gstAmount,
         BigDecimal deliveryFee,
-        BigDecimal discountAmount
+        BigDecimal discountAmount,
+        /** Extra named aggregator charges beyond subtotal/GST/delivery/discount (gateway fees, …). */
+        List<OrderCharge> charges
 ) {
+    /** Back-compat constructor for callers that don't supply extra charges (→ none). */
+    public ParsedOrder(
+            String aggregatorCode, String externalOrderId, String pnr, String trainNumber,
+            String trainName, String coach, String berth, String boardingStationCode,
+            String deliveryStationCode, String deliveryStationName, String passengerName,
+            String passengerPhone, LocalDate deliveryDate, String deliverySlot, BigDecimal amount,
+            String currency, String status, List<OrderItem> items, String subject,
+            String sourceMessageId, String paymentMode, BigDecimal amountToCollect,
+            BigDecimal subtotalAmount, BigDecimal gstAmount, BigDecimal deliveryFee,
+            BigDecimal discountAmount) {
+        this(aggregatorCode, externalOrderId, pnr, trainNumber, trainName, coach, berth,
+                boardingStationCode, deliveryStationCode, deliveryStationName, passengerName,
+                passengerPhone, deliveryDate, deliverySlot, amount, currency, status, items,
+                subject, sourceMessageId, paymentMode, amountToCollect, subtotalAmount, gstAmount,
+                deliveryFee, discountAmount, List.of());
+    }
 }

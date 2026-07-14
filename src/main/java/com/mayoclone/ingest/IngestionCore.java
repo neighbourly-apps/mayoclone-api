@@ -314,6 +314,10 @@ public class IngestionCore {
         o.setSubject(p.subject());
         o.setSourceMessageId(p.sourceMessageId());
         o.setItems(p.items());
+        // Extra named aggregator charges (gateway/platform fees, …) beyond the standard bill lines.
+        if (p.charges() != null && !p.charges().isEmpty()) {
+            o.setCharges(new ArrayList<>(p.charges()));
+        }
         // Retain the FULL raw email untruncated — the ultimate safety net so the
         // source is always recoverable and re-parseable even if a field parsed wrong.
         o.setRawEmail(body);

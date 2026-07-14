@@ -246,8 +246,48 @@ public class GenericIrctcEmailParser implements IrctcEmailParser {
                 extractSubtotal(safeBody),
                 extractGst(safeBody),
                 extractDeliveryFee(safeBody),
-                extractDiscount(safeBody)
+                extractDiscount(safeBody),
+                extractCharges(safeBody)
         );
+    }
+
+    // ---- extra charges ------------------------------------------------------
+
+    // An explicit additive fee line, e.g. "(+) Gateway Platform Fees   ₹ 30". The label is
+    // captured up to the amount; only the "(+)" additive form is matched so item/summary
+    // numbers can't be mistaken for a fee.
+    private static final Pattern PLUS_FEE = Pattern.compile(
+            "\\(\\+\\)" + H + "*([A-Za-z][A-Za-z .&/()-]*?)" + H + "*[:#-]?" + H
+                    + "*(?:₹|Rs\\.?|INR)?" + H + "*([0-9][0-9,]*(?:\\.[0-9]+)?)",
+            Pattern.CASE_INSENSITIVE);
+
+    // Labels already carried by their own field (subtotal/GST/delivery/discount, totals) —
+    // matched anywhere in the label so "GST on Delivery Charge" (already summed into GST) or
+    // "Delivery Charge" are NOT double-counted as an extra charge.
+    private static final Pattern CATEGORISED_CHARGE = Pattern.compile(
+            "gst|delivery|discount|sub" + S + "*total|base" + S + "*price|order" + S + "*total"
+                    + "|grand" + S + "*total|paid|balance|net\\b|to" + S + "*collect",
+            Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Extra named bill lines the aggregator added on top of subtotal/GST/delivery/discount —
+     * e.g. "Gateway Platform Fees". Default: every "(+) label ₹amount" line whose label isn't
+     * already one of the categorised fields. Aggregator parsers may override for other formats.
+     */
+    protected List<com.mayoclone.domain.OrderCharge> extractCharges(String body) {
+        List<com.mayoclone.domain.OrderCharge> charges = new ArrayList<>();
+        Matcher m = PLUS_FEE.matcher(body);
+        while (m.find()) {
+            String label = m.group(1).replaceAll("\\s+", " ").trim();
+            if (label.isEmpty() || CATEGORISED_CHARGE.matcher(label).find()) {
+                continue;
+            }
+            BigDecimal amt = parseMoney(m.group(2));
+            if (amt != null && amt.signum() > 0) {
+                charges.add(new com.mayoclone.domain.OrderCharge(label, amt));
+            }
+        }
+        return charges;
     }
 
     // ---- bill breakdown -----------------------------------------------------
