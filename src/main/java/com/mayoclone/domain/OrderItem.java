@@ -13,6 +13,9 @@ import java.math.BigDecimal;
 public class OrderItem {
 
     private String name;
+    /** Optional item description (e.g. the thali's contents); null when the email had none. */
+    @jakarta.persistence.Column(length = 512)
+    private String description;
     private int qty;
     private BigDecimal price;
 
@@ -20,7 +23,12 @@ public class OrderItem {
     }
 
     public OrderItem(String name, int qty, BigDecimal price) {
+        this(name, null, qty, price);
+    }
+
+    public OrderItem(String name, String description, int qty, BigDecimal price) {
         this.name = name;
+        this.description = description;
         this.qty = qty;
         this.price = price;
     }
@@ -31,6 +39,14 @@ public class OrderItem {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
     }
 
     public int getQty() {
