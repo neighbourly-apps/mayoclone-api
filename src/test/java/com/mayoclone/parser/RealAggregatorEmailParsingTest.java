@@ -25,6 +25,8 @@ class RealAggregatorEmailParsingTest {
     private final RelfoodEmailParser relfood = new RelfoodEmailParser();
     // Yatri Restro is a fully vertical (label-then-next-line) layout — its own parser.
     private final YatriRestroEmailParser yatri = new YatriRestroEmailParser();
+    // RailRestro has inverted bill labels ("Total:" = food subtotal) — its own parser.
+    private final RailRestroEmailParser railrestro = new RailRestroEmailParser();
 
     private static Aggregator agg(String code) {
         Aggregator a = new Aggregator();
@@ -107,10 +109,13 @@ class RealAggregatorEmailParsingTest {
 
     @Test
     void parsesRailRestro() {
-        ParsedOrder p = generic.parse(agg("RAILRESTRO"), "no-reply@railrestro.com",
+        ParsedOrder p = railrestro.parse(agg("RAILRESTRO"), "no-reply@railrestro.com",
                 "New Order #5618572 Received", RAILRESTRO, "<rr-1@railrestro.com>");
 
         assertEquals("5618572", p.externalOrderId());
+        // Inverted labels: subtotal is the FOOD "Total:" (240), NOT the GST-inclusive
+        // "Subtotal:" (252) — so subtotal + GST (12) reconciles to the grand total (252).
+        assertMoney("240", p.subtotalAmount());
         assertEquals("Haidar Ali M.", p.passengerName());
         assertEquals("7355650315", p.passengerPhone());
         assertEquals("22538", p.trainNumber());
