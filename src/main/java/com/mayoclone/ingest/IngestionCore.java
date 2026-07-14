@@ -19,6 +19,7 @@ import com.mayoclone.repository.IngestFailureRepository;
 import com.mayoclone.repository.IrctcOrderRepository;
 import com.mayoclone.service.AggregatorService;
 import com.mayoclone.service.OrderCommandService;
+import com.mayoclone.service.TrainNameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -78,6 +79,7 @@ public class IngestionCore {
     private final OrderCommandService orderCommandService;
     private final JobQueue jobQueue;
     private final EnrichmentProperties enrichmentProperties;
+    private final TrainNameService trainNameService;
 
     public IngestionCore(List<IrctcEmailParser> parsers,
                          IrctcOrderRepository orderRepo,
@@ -86,7 +88,8 @@ public class IngestionCore {
                          AppMetrics metrics,
                          OrderCommandService orderCommandService,
                          JobQueue jobQueue,
-                         EnrichmentProperties enrichmentProperties) {
+                         EnrichmentProperties enrichmentProperties,
+                         TrainNameService trainNameService) {
         this.parsers = parsers;
         this.orderRepo = orderRepo;
         this.aggregatorService = aggregatorService;
@@ -95,6 +98,7 @@ public class IngestionCore {
         this.orderCommandService = orderCommandService;
         this.jobQueue = jobQueue;
         this.enrichmentProperties = enrichmentProperties;
+        this.trainNameService = trainNameService;
     }
 
     /**
@@ -217,7 +221,22 @@ public class IngestionCore {
         // (e.g. "EXP 123") is dropped from the number and preserved in trainName instead.
         String cleanedTrainNumber = plausibleTrainNumber(p.trainNumber());
         o.setTrainNumber(cleanedTrainNumber);
-        o.setTrainName(resolveTrainName(p.trainName(), p.trainNumber(), cleanedTrainNumber));
+        // Self-learning catalog: an email that carried the name teaches it; an email
+        // that had only the number (e.g. RailRecipe) borrows a previously-learned name.
+        String trainName = resolveTrainName(p.trainName(), p.trainNumber(), cleanedTrainNumber);
+        if (cleanedTrainNumber != null) {
+            try {
+                if (!isBlank(trainName)) {
+                    trainNameService.record(cleanedTrainNumber, trainName);
+                } else {
+                    trainName = trainNameService.resolve(cleanedTrainNumber).orElse(trainName);
+                }
+            } catch (RuntimeException ex) {
+                // The catalog is a convenience — never let it block an order from being saved.
+                log.debug("train-name catalog lookup/record skipped: {}", ex.toString());
+            }
+        }
+        o.setTrainName(trainName);
         o.setCoach(p.coach());
         o.setBerth(p.berth());
         o.setBoardingStationCode(p.boardingStationCode());

@@ -16,6 +16,7 @@ import com.mayoclone.repository.IrctcOrderRepository;
 import com.mayoclone.repository.VendorDashboardCredentialRepository;
 import com.mayoclone.repository.VendorRepository;
 import com.mayoclone.service.OrderCommandService;
+import com.mayoclone.service.TrainNameService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -58,6 +59,7 @@ public class DashboardEnrichJobHandler implements JobHandler {
     private final VendorDashboardCredentialRepository credRepo;
     private final DashboardScraperRegistry scrapers;
     private final OrderCommandService orderCommandService;
+    private final TrainNameService trainNameService;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public DashboardEnrichJobHandler(EnrichmentProperties props,
@@ -65,13 +67,15 @@ public class DashboardEnrichJobHandler implements JobHandler {
                                      VendorRepository vendorRepo,
                                      VendorDashboardCredentialRepository credRepo,
                                      DashboardScraperRegistry scrapers,
-                                     OrderCommandService orderCommandService) {
+                                     OrderCommandService orderCommandService,
+                                     TrainNameService trainNameService) {
         this.props = props;
         this.orderRepo = orderRepo;
         this.vendorRepo = vendorRepo;
         this.credRepo = credRepo;
         this.scrapers = scrapers;
         this.orderCommandService = orderCommandService;
+        this.trainNameService = trainNameService;
     }
 
     @Override
@@ -183,6 +187,12 @@ public class DashboardEnrichJobHandler implements JobHandler {
             // IRCTC emails omit the train NAME — the dashboard supplies it.
             if (isBlank(order.getTrainName()) && notBlank(e.trainName())) {
                 order.setTrainName(e.trainName().trim());
+            }
+            // Teach the shared catalog so other aggregators' number-only orders benefit.
+            try {
+                trainNameService.record(order.getTrainNumber(), order.getTrainName());
+            } catch (RuntimeException ignored) {
+                // Best-effort — never fail enrichment over a catalog write.
             }
         }
 

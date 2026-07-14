@@ -65,8 +65,8 @@ public class RiderPerformanceService {
         long totalMinutes = 0;
 
         for (IrctcOrder o : orders) {
-            // 5-status model: BILL_PENDING == delivered (bill pending); CANCELLED == undelivered.
-            if (o.getStatus() == OrderStatus.BILL_PENDING) {
+            // COMPLETED / BILL_PENDING == delivered; CANCELLED == undelivered.
+            if (o.getStatus().isDelivered()) {
                 delivered++;
                 if (o.getAssignedAt() != null && o.getDeliveredAt() != null) {
                     timedCount++;
