@@ -5,7 +5,7 @@
 # Using the JDK image + the repo's wrapper guarantees the exact Gradle version
 # rather than whatever a `gradle:*` tag ships.
 # ─────────────────────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /workspace
 
 # Copy only the build scaffolding first so dependency resolution caches
@@ -23,7 +23,7 @@ RUN ./gradlew --no-daemon clean bootJar \
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 2 — slim JRE runtime, non-root.
 # ─────────────────────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre AS runtime
+FROM eclipse-temurin:25-jre AS runtime
 
 # curl is used by the container HEALTHCHECK below.
 RUN apt-get update \
