@@ -43,7 +43,7 @@ jobs:
       # Two-phase Trivy: SARIF upload (always) so the dashboard sees findings,
       # then a hard gate that fails the build on HIGH/CRITICAL.
       - name: Trivy scan (SARIF upload)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: mayoclone-api:ci
           format: sarif
@@ -59,7 +59,7 @@ jobs:
           category: trivy-image
 
       - name: Trivy gate (fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: mayoclone-api:ci
           format: table
